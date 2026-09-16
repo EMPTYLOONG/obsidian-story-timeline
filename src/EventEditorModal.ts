@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, TFile } from 'obsidian';
+import { App, Modal, Notice, Setting, TFile, ColorComponent } from 'obsidian';
 import type StoryTimelinePlugin from './main';
 
 export interface SubEventInput {
@@ -14,12 +14,12 @@ export interface EventEditorData {
 	date: string;
 	endDate: string;
 	category: string;
+	color: string;
 	tags: string[];
 	description: string;
 	subEvents: SubEventInput[];
 }
 
-/** YAML 字符串值转义 */
 function yamlString(s: string): string {
 	if (s === '') return '""';
 	const needsQuote =
@@ -59,6 +59,7 @@ export class EventEditorModal extends Modal {
 			date: data.date ?? '',
 			endDate: data.endDate ?? '',
 			category: data.category ?? this.defaultCategoryId(),
+			color: data.color ?? '',
 			tags: data.tags ?? [],
 			description: data.description ?? '',
 			subEvents: data.subEvents ?? [],
@@ -68,6 +69,14 @@ export class EventEditorModal extends Modal {
 	private defaultCategoryId(): string {
 		const first = this.plugin.settings.categories.find((c) => c.id !== 'default');
 		return first?.id ?? 'default';
+	}
+
+	/** 取分类的默认颜色 */
+	private getCategoryColor(catId: string): string {
+		const cat = this.plugin.settings.categories.find((c) => c.id === catId);
+		if (cat) return cat.color;
+		const def = this.plugin.settings.categories.find((c) => c.id === 'default');
+		return def?.color ?? '#95a5a6';
 	}
 
 	onOpen(): void {
@@ -127,6 +136,30 @@ export class EventEditorModal extends Modal {
 					this.data.category = v;
 				});
 			});
+
+		// ============ 代表色 ============
+		let colorPicker: ColorComponent | null = null;
+		const initialColor = this.data.color || this.getCategoryColor(this.data.category);
+
+		new Setting(contentEl)
+			.setName('代表色')
+			.setDesc('自定义事件的卡片颜色；留空则跟随分类颜色')
+			.addColorPicker((picker) => {
+				colorPicker = picker;
+				picker.setValue(initialColor).onChange((v) => {
+					this.data.color = v;
+				});
+			})
+			.addExtraButton((btn) =>
+				btn
+					.setIcon('rotate-ccw')
+					.setTooltip('恢复为分类默认色')
+					.onClick(() => {
+						this.data.color = '';
+						const fallback = this.getCategoryColor(this.data.category);
+						colorPicker?.setValue(fallback);
+					})
+			);
 
 		new Setting(contentEl)
 			.setName('标签')
@@ -313,19 +346,22 @@ export class EventEditorModal extends Modal {
 	private buildTimelineLines(): string[] {
 		const lines: string[] = [];
 
-		// 日期不转义（保持 Obsidian 能识别为 date 类型）
 		lines.push(`timelineDate: ${this.data.date.trim()}`);
 		if (this.data.endDate.trim()) {
 			lines.push(`timelineEndDate: ${this.data.endDate.trim()}`);
 		}
 
-		// 其他值统一转义
 		lines.push(`timelineTitle: ${yamlString(this.data.title.trim())}`);
 		if (this.data.description.trim()) {
 			lines.push(`timelineDescription: ${yamlString(this.data.description.trim())}`);
 		}
 		lines.push(`timelineCategory: ${yamlString(this.data.category)}`);
 
+		// 自定义代表色（仅当用户设了自定义色才写入）
+		// ⚠️ 必须用 yamlString 加引号，因为 # 在 YAML 里是注释符
+		if (this.data.color.trim()) {
+			lines.push(`timelineColor: ${yamlString(this.data.color.trim())}`);
+		}
 		if (this.data.tags.length > 0) {
 			lines.push(
 				`timelineTags: [${this.data.tags.map((t) => yamlString(t)).join(', ')}]`
@@ -379,6 +415,7 @@ export class EventEditorModal extends Modal {
 			'timelineTitle',
 			'timelineDescription',
 			'timelineCategory',
+			'timelineColor',
 			'timelineTags',
 			'timelineSubEvents',
 		]);

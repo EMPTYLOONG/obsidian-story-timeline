@@ -31,6 +31,7 @@ interface TimelineEvent {
 	title: string;
 	description: string;
 	category: string;
+	color?: string;     
 	tags: string[];
 	filePath: string;
 	subEvents: SubEvent[];
@@ -301,6 +302,7 @@ export class TimelineView extends ItemView {
 				date: event.dateStr,
 				endDate: event.endStr ?? '',
 				category: event.category,
+				color: event.color ?? '',
 				tags: event.tags,
 				description: event.description,
 				subEvents: event.subEvents.map((s) => ({
@@ -375,6 +377,7 @@ export class TimelineView extends ItemView {
 			'timelineTitle',
 			'timelineDescription',
 			'timelineCategory',
+			'timelineColor',
 			'timelineTags',
 			'timelineSubEvents',
 		]);
@@ -658,10 +661,17 @@ export class TimelineView extends ItemView {
 			const rawTitle: unknown = fm.timelineTitle;
 			const rawDesc: unknown = fm.timelineDescription;
 			const rawCat: unknown = fm.timelineCategory;
+			const rawColor: unknown = fm.timelineColor;
 			const rawTags: unknown = fm.timelineTags;
 
 			const rawCatStr = typeof rawCat === 'string' ? rawCat : 'default';
 			const normalizedCat = this.normalizeCategory(rawCatStr);
+
+			// 只接受 #rrggbb 或 #rgb 格式
+			const customColor =
+				typeof rawColor === 'string' && /^#[0-9a-fA-F]{3,6}$/.test(rawColor.trim())
+					? rawColor.trim()
+					: undefined;
 
 			const event: TimelineEvent = {
 				dateTs: parsedStart.ts,
@@ -670,11 +680,11 @@ export class TimelineView extends ItemView {
 				title: typeof rawTitle === 'string' ? rawTitle : file.basename,
 				description: typeof rawDesc === 'string' ? rawDesc : '',
 				category: normalizedCat,
+				color: customColor,
 				tags: this.parseTags(rawTags),
 				filePath: file.path,
 				subEvents: this.parseSubEvents(fm.timelineSubEvents),
 			};
-
 			if (parsedEnd && parsedEnd.ts >= parsedStart.ts) {
 				event.endTs = parsedEnd.ts;
 				event.endStr = parsedEnd.raw;
@@ -1327,15 +1337,15 @@ export class TimelineView extends ItemView {
 		card.dataset.startTs = String(event.dateTs);
 		card.dataset.endTs = String(event.endTs ?? event.dateTs);
 
-		const color = this.getCategoryColor(event.category);
+		// 事件自定义颜色优先于分类颜色
+		const color = event.color ?? this.getCategoryColor(event.category);
 		card.style.left = `${box.startX}px`;
 		card.style.width = `${cardWidthPx}px`;
 		card.style.borderColor = color;
 
 		if (hasPeriod) {
-			card.style.background = this.hexToRgba(color, 0.15);
+			card.style.background = this.hexToRgba(color, 0.08);
 		}
-
 		const sticky = card.createDiv('card-sticky');
 		sticky.style.width = `${Math.min(this.cardWidth, cardWidthPx)}px`;
 
@@ -1370,10 +1380,13 @@ export class TimelineView extends ItemView {
 
 				const leftPct = ((subStart - parentStart) / totalSpan) * 100;
 				const widthPct = ((subEnd - subStart) / totalSpan) * 100;
-
 				const block = subRow.createDiv('sub-event-block');
 				block.style.setProperty('--sub-left', `${leftPct}%`);
 				block.style.setProperty('--sub-width', `${widthPct}%`);
+				// 子事件块用更深的分类色作背景，与父卡片形成对比
+				block.style.setProperty('--sub-bg', this.hexToRgba(color, 0.32));
+				block.style.setProperty('--sub-bg-hover', this.hexToRgba(color, 0.5));
+				block.style.setProperty('--sub-border', this.hexToRgba(color, 0.55));
 				block.textContent = sub.title;
 				block.title = sub.endStr
 					? `${sub.dateStr} → ${sub.endStr}`
