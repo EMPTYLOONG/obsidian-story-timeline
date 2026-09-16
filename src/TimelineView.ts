@@ -896,7 +896,6 @@ export class TimelineView extends ItemView {
 	}
 
 	// ============ 导出图片 ============
-
 	private async exportAsImage(): Promise<void> {
 		const track = this.containerEl.querySelector<HTMLElement>('.timeline-track');
 		if (!track) {
@@ -913,10 +912,47 @@ export class TimelineView extends ItemView {
 			return;
 		}
 
-		const dpr = 2;
+		// 浏览器 Canvas 尺寸上限（保守值）
+		const MAX_DIM = 16000;
+		// 总像素数上限（Chrome 约 2^28）
+		const MAX_AREA = 268_000_000;
+
+		// 自动选择 dpr：从 2 开始逐级降低，直到尺寸和面积都不超限
+		let dpr = 2;
+		const candidates = [2, 1.5, 1.25, 1, 0.75, 0.5];
+		for (const c of candidates) {
+			if (
+				W * c <= MAX_DIM &&
+				H * c <= MAX_DIM &&
+				W * c * H * c <= MAX_AREA
+			) {
+				dpr = c;
+				break;
+			}
+		}
+
+		const canvasW = Math.ceil(W * dpr);
+		const canvasH = Math.ceil(H * dpr);
+
+		// 连最小 dpr 都超限 → 提示用户
+		if (canvasW > MAX_DIM || canvasH > MAX_DIM) {
+			const maxSpan = Math.max(W, H);
+			new Notice(
+				`时间线太长（${W}×${H}px），超出浏览器 Canvas 尺寸上限（${MAX_DIM}px）。\n` +
+				`建议：点击工具栏「－」缩小时间轴，或隐藏部分分类后再导出。\n` +
+				`当前跨度：${maxSpan}px`,
+				10000
+			);
+			return;
+		}
+
+		console.debug(
+			`[Story Timeline] 导出尺寸: ${W}×${H} (dpr=${dpr}, canvas=${canvasW}×${canvasH})`
+		);
+
 		const canvas = document.createElement('canvas');
-		canvas.width = W * dpr;
-		canvas.height = H * dpr;
+		canvas.width = canvasW;
+		canvas.height = canvasH;
 		const ctx = canvas.getContext('2d');
 		if (!ctx) {
 			new Notice('无法创建画布');
@@ -944,6 +980,7 @@ export class TimelineView extends ItemView {
 			};
 		};
 
+		// 轨道背景
 		const lanes = track.querySelectorAll<HTMLElement>('.timeline-lane');
 		lanes.forEach((lane) => {
 			const r = relRect(lane);
@@ -959,6 +996,7 @@ export class TimelineView extends ItemView {
 			ctx.setLineDash([]);
 		});
 
+		// 卡片
 		const cards = track.querySelectorAll<HTMLElement>('.timeline-card');
 		cards.forEach((card) => {
 			const r = relRect(card);
@@ -1006,6 +1044,7 @@ export class TimelineView extends ItemView {
 			ctx.restore();
 		});
 
+		// 刻度
 		const scale = track.querySelector<HTMLElement>('.timeline-scale');
 		if (scale) {
 			const sr = relRect(scale);
@@ -1037,6 +1076,7 @@ export class TimelineView extends ItemView {
 			});
 		}
 
+		// 轨道标签
 		const labels = track.querySelectorAll<HTMLElement>('.timeline-lane-label');
 		labels.forEach((label) => {
 			const r = relRect(label);
@@ -1053,7 +1093,12 @@ export class TimelineView extends ItemView {
 
 		canvas.toBlob((blob) => {
 			if (!blob) {
-				new Notice('导出失败');
+				console.debug('[Story Timeline] toBlob 返回 null，尺寸:', canvasW, '×', canvasH);
+				new Notice(
+					`导出失败：画布过大（${canvasW}×${canvasH}）。\n` +
+					`请缩小时间轴或减少事件后重试。`,
+					8000
+				);
 				return;
 			}
 			const url = URL.createObjectURL(blob);
@@ -1065,7 +1110,7 @@ export class TimelineView extends ItemView {
 			a.click();
 			document.body.removeChild(a);
 			setTimeout(() => URL.revokeObjectURL(url), 2000);
-			new Notice('时间线截图已导出');
+			new Notice(`时间线截图已导出（${canvasW}×${canvasH}）`);
 		}, 'image/png');
 	}
 
