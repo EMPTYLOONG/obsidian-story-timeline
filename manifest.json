@@ -1,7 +1,7 @@
 {
 	"id": "story-timeline",
 	"name": "Story Timeline",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"minAppVersion": "1.0.0",
 	"description": "舷窗式可自定义时间线，用于剧本创作中的时间节点管理",
 	"author": "你的名字",
