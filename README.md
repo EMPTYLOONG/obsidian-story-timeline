@@ -1,93 +1,400 @@
-# Obsidian Sample Plugin
+# Story Timeline
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+> 舷窗式可自定义时间线插件，为剧本创作、世界观设定、历史叙事而生。
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+一个为 Obsidian 打造的横向时间线视图。支持多轨道分类、时期事件、子事件分割、标签筛选、时间游标、可视化编辑器和图片导出。
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
+---
 
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and outputs a Notice on click.
-- Registers a global interval which logs 'setInterval' to the console.
+## ✨ 功能一览
 
-## First time developing plugins?
+### 时间线视图
+- **多轨道布局**：每个分类一条水平轨道，互不干扰
+- **舷窗式视口**：横向滚动查看任意长的时间跨度（从公元前到未来）
+- **时间刻度**：粘性固定在顶部，随缩放级别自动切换月 / 季度 / 年 / 5 年
+- **重叠自动分层**：同轨道内时间重叠的事件自动纵向错开，不互相遮挡
+- **内容自适应高度**：卡片高度按内容自动计算，标题、描述、标签完整显示
 
-Quick starting guide for new plugin devs:
+### 事件类型
+- **单点事件**：某一时刻发生的事（如「卢沟桥事变」）
+- **时期事件**：持续一段时间的事（如「张三的一生 1900–1980」）
+- **子事件**：时期内部的阶段划分，按时间比例自动对齐到父事件条带上
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `src/main.ts` to `main.js`.
-- Make changes to `src/main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+### 交互
+- **时间游标**：点击时间刻度，激活蓝色游标线
+- **时长徽章**：所有包含游标时间的时期事件显示「已过 X 年 Y 个月」，并**粘在视口左侧**直到离开
+- **粘性内容**：时期条带滚动时，其文字内容保持在视口左侧可见
+- **卡片宽度调节**：工具栏右侧滑条实时调整
 
-## Releasing new releases
+### 数据管理
+- **可视化编辑器**：点「+ 新建事件」按钮或右键卡片，表单式填写
+- **自动注册分类**：笔记里写新 `timelineCategory`，刷新后自动加入设置列表
+- **智能名称匹配**：`timelineCategory: 反派线` 会自动重定向到 id 为 `villain` 的分类
+- **重复检测**：设置面板高亮显示名重复的分类
+- **模糊日期**：支持 `2024`、`2024-03`、`2024-03-15`、`2024年3月15日`、`618`、`-500`
+- **自动刷新**：笔记改动后视图自动更新（400ms 防抖）
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### 筛选与导出
+- **分类筛选**：点击分类 chip 隐藏/显示整条轨道
+- **标签筛选**：点击标签 chip 隐藏含该标签的事件
+- **导出图片**：一键将整条时间线导出为 PNG 截图
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+---
 
-## Adding your plugin to the community plugin list
+## 📦 安装
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+### 从 GitHub Release 安装（推荐）
 
-## How to use
+1. 从 [最新 Release](https://github.com/EMPTYLOONG/obsidian-story-timeline/releases) 下载三个文件：
+   - `main.js`
+   - `manifest.json`
+   - `styles.css`
 
-- Clone this repo.
-- Make sure your NodeJS is at least v18 (`node --version`).
-- `npm i` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+2. 在你的 Obsidian 库中，把这三个文件放入：
+   ```
+   <你的库>/.obsidian/plugins/story-timeline/
+   ```
 
-## Manually installing the plugin
+3. 重启 Obsidian → **设置 → 第三方插件** → 启用 **Story Timeline**
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+### 从源码安装（开发者）
 
-## Improve code quality with eslint
-
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code.
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-	"fundingUrl": "https://buymeacoffee.com"
-}
+```bash
+cd <你的库>/.obsidian/plugins/
+git clone https://github.com/EMPTYLOONG/obsidian-story-timeline.git story-timeline
+cd story-timeline
+npm install
+npm run build
 ```
 
-If you have multiple URLs, you can also do:
+---
 
-```json
-{
-	"fundingUrl": {
-		"Buy Me a Coffee": "https://buymeacoffee.com",
-		"GitHub Sponsor": "https://github.com/sponsors",
-		"Patreon": "https://www.patreon.com/"
-	}
-}
+## 🚀 快速开始
+
+### 1. 打开时间线
+
+- 点击左侧 Ribbon 区域的 **⏰ 时钟图标**
+- 或按 `Ctrl/Cmd + P` 打开命令面板 → 搜索「打开故事时间线」
+
+### 2. 创建第一个事件
+
+点击工具栏的 **+ 新建事件** 按钮，填写表单：
+
+```
+标题：      第一幕：主人公离家
+开始日期：  2024-03-15
+结束日期：  （留空 = 单点事件）
+分类：      主线
+标签：      转折, 开场
+描述：      主角被迫离开故乡，踏上旅程
 ```
 
-## API Documentation
+保存后，事件自动出现在时间线上。
 
-See https://docs.obsidian.md
-"# obsidian-" 
+### 3. 打开右侧面板查看
+
+时间线以右侧边栏形式打开，可以与笔记同时查看。窗口可拖动调整宽度。
+
+---
+
+## 📖 Frontmatter 字段参考
+
+所有字段写在笔记最顶部的 frontmatter 里。**只有 `timelineDate` 是必需的**。
+
+```yaml
+---
+# ===== 必需 =====
+timelineDate: 2024-03-15            # 开始日期
+
+# ===== 时期（可选） =====
+timelineEndDate: 2024-06-20         # 结束日期，填写后变时期条带
+
+# ===== 显示内容（可选） =====
+timelineTitle: 第一幕：离家          # 不填则用文件名
+timelineDescription: 主角踏上旅途    # 描述（显示在标题下方）
+timelineCategory: main              # 所属分类
+timelineTags: [转折, 开场]          # 标签（数组或逗号分隔字符串均可）
+
+# ===== 子事件（可选） =====
+timelineSubEvents:
+  - date: 2024-03-15
+    endDate: 2024-04-01
+    title: 序章
+    link: 序章笔记           # 可选，点击跳转
+  - date: 2024-04-01
+    endDate: 2024-06-20
+    title: 正篇
+---
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `timelineDate` | 日期字符串 | **必需**。事件开始日期 |
+| `timelineEndDate` | 日期字符串 | 结束日期，填写后变时期条带 |
+| `timelineTitle` | 字符串 | 事件标题 |
+| `timelineDescription` | 字符串 | 事件描述 |
+| `timelineCategory` | 字符串 | 所属分类（对应轨道） |
+| `timelineTags` | 数组 / 字符串 | 自定义标签 |
+| `timelineSubEvents` | 数组 | 子事件列表 |
+
+### 日期格式支持
+
+| 写法 | 精度 | 示例 |
+|---|---|---|
+| `2024-03-15` | 日 | 精确到天 |
+| `2024/3/15` `2024.3.15` | 日 | 斜杠/点分隔 |
+| `2024年3月15日` | 日 | 中文 |
+| `2024-03` `2024年3月` | 月 | 锚定到该月 1 日 |
+| `2024` `2024年` | 年 | 锚定到该年 1 月 1 日 |
+| `618` | 年 | 唐朝建立 |
+| `-500` | 年 | 公元前 500 年 |
+
+无法解析的日期会在开发者控制台给出警告，并跳过该事件（不影响其他事件）。
+
+---
+
+## 🎨 界面说明
+
+### 工具栏
+
+| 按钮 | 作用 |
+|---|---|
+| **+ 新建事件** | 打开可视化编辑器 |
+| **←** / **→** | 视口左右平移 200px |
+| **＋** / **－** | 放大 / 缩小时间轴 |
+| **刷新** | 重新扫描所有笔记 |
+| **导出图片** | 导出整条时间线为 PNG |
+| **清除游标** | 取消时间游标 |
+| **宽度滑条** | 调整卡片宽度（60–240px） |
+
+### 筛选栏
+
+工具栏下方分两组：
+
+```
+分类  [主线] [支线] [角色线] [其他]
+标签  [主角] [伏笔] [战争] [已回收]        [重置]
+```
+
+- 点击 chip → **隐藏**该类事件（chip 变灰带删除线）
+- 再次点击 → 恢复显示
+- 点 **重置** → 恢复所有
+
+### 卡片右键菜单
+
+右键任意卡片：
+
+- **编辑事件**：打开编辑器
+- **打开笔记**：跳转到对应笔记
+- **从时间线移除**：清空笔记里的 timeline* 字段（笔记内容保留）
+
+---
+
+## ⚙️ 设置面板
+
+**设置 → 故事时间线设置**：
+
+| 项 | 说明 |
+|---|---|
+| 日期字段名 | frontmatter 中用作日期的字段（默认 `timelineDate`） |
+| 默认缩放级别 | 20–300 |
+| 卡片宽度 | 60–240px |
+| 新建事件的默认文件夹 | 留空则放在库根目录 |
+| 显示事件描述 | 是否显示 `timelineDescription` |
+| 显示事件标签 | 是否显示 `timelineTags` |
+| 自动注册新分类 | 见下 |
+
+### 分类管理
+
+每个分类可配置：
+
+- **颜色**：轨道标签和卡片边框颜色
+- **ID**：frontmatter `timelineCategory` 使用的值（只读）
+- **显示名称**：时间线标签上显示的文本
+
+支持新增、删除、**检查重复**（显示名冲突会高亮警告）。
+
+### 自动注册新分类
+
+开启时（默认）：笔记中写入新的 `timelineCategory` 值后，刷新时该分类自动加入设置列表，并分配预设颜色。
+
+**智能匹配**：如果新值匹配某个已有分类的**显示名**，会自动重定向到该分类的 ID，不产生重复。
+
+---
+
+## 💡 使用技巧
+
+### 人物一生的写法
+
+```yaml
+---
+timelineDate: 1900-01-01
+timelineEndDate: 1980-06-15
+timelineTitle: 张三
+timelineCategory: character
+timelineTags: [主角, 已故]
+timelineSubEvents:
+  - date: 1900-01-01
+    endDate: 1915-01-01
+    title: 童年
+  - date: 1915-01-01
+    endDate: 1940-01-01
+    title: 青年
+  - date: 1940-01-01
+    endDate: 1960-01-01
+    title: 中年
+  - date: 1960-01-01
+    endDate: 1980-06-15
+    title: 老年
+---
+```
+
+配合**时间游标**：点击 1960 年的刻度 → 徽章显示「已过 60 年」，即 60 岁。
+
+### 标签体系建议
+
+| 维度 | 示例标签 |
+|---|---|
+| 角色归属 | `张三` `李四` `王五` |
+| 线索状态 | `伏笔` `回收` `悬念` |
+| 剧情类型 | `战斗` `对白` `闪回` `内心` |
+| 修改状态 | `待改` `已定稿` |
+| 情感基调 | `高潮` `低谷` `转折` |
+
+标签搭配**筛选器**，可快速查看某一类事件的时间分布。
+
+### 分期管理一条线
+
+1. 用**大时期**表示整条线（如「王朝兴衰 618 → 907」）
+2. 用**子事件**表示各阶段（「贞观之治」「安史之乱」）
+3. 每个子事件用 `link` 指向详细笔记
+
+---
+
+## ❓ 常见问题
+
+### 时间线显示不出事件
+
+1. **frontmatter 是否在第一行？** 第一行必须是 `---`，前面不能有空行
+2. **日期格式是否正确？** 见上文
+3. **是否点了刷新？** 或关闭再打开视图
+4. **打开开发者控制台**（`Ctrl/Cmd + Shift + I`）看 Console 是否有红色报错
+
+### 卡片挤在一起
+
+- 点 **＋** 放大时间轴
+- 或调大设置里的**默认缩放级别**
+- 重叠的事件会自动分层，不需要手动处理
+
+### 日期解析失败
+
+支持的格式有限。常见错误：
+
+| ❌ 不支持 | ✅ 改用 |
+|---|---|
+| `二〇二四年` | `2024` |
+| `2024 年 3 月` | `2024-03` |
+| `明年三月` | `2025-03` |
+| `光绪二十年` | `1894` |
+
+失败的事件会在 Console 里输出警告，但**不影响其他事件**。
+
+### 显示名重复的分类
+
+两个分类显示名相同 → 时间线上会有两条同名轨道。
+
+**解决**：在设置里修改其中一个的**显示名称**。
+
+**预防**：自动注册时会做**名称匹配**，如果笔记里写的是某个分类的显示名，会自动重定向到它的 ID。
+
+### 卡片高度不够，文字被裁
+
+修改 `src/TimelineView.ts` 顶部的两个常量：
+
+```typescript
+private readonly LANE_UNIT_HEIGHT = 160;  // 空轨道高度
+private readonly MIN_CARD_HEIGHT = 130;   // 内容少时卡片的最小高度
+```
+
+推荐值：
+
+| 风格 | LANE_UNIT_HEIGHT | MIN_CARD_HEIGHT |
+|---|---|---|
+| 紧凑 | 130 | 110 |
+| 默认 | 160 | 130 |
+| 宽松 | 200 | 160 |
+
+### 修改代码后 Obsidian 没反应
+
+- 确认 `npm run dev` 正在运行
+- 手动在设置里**关闭再打开**插件
+- 装了 Hot Reload 插件的话，看它是否已启用
+
+---
+
+## 🛠 开发
+
+### 环境要求
+
+- Node.js v18+
+- npm
+
+### 本地开发
+
+```bash
+git clone https://github.com/EMPTYLOONG/obsidian-story-timeline.git
+cd obsidian-story-timeline
+npm install
+npm run dev      # 监听模式
+```
+
+把项目文件夹放到库的 `.obsidian/plugins/` 下，在 Obsidian 中启用。
+
+### 类型检查
+
+```bash
+npm run build    # 会跑 tsc 做类型检查，然后 esbuild 打包
+```
+
+### 项目结构
+
+```
+story-timeline/
+├── src/
+│   ├── main.ts               # 插件入口
+│   ├── TimelineView.ts       # 时间线视图
+│   ├── EventEditorModal.ts   # 事件编辑器
+│   └── settings.ts           # 设置面板
+├── manifest.json             # 插件元数据
+├── main.js                   # 编译产物（构建生成）
+├── styles.css                # 样式
+└── versions.json             # 版本兼容映射
+```
+
+---
+
+## 📝 版本历史
+
+### 0.1.0
+
+- 首个公开版本
+- 多轨道时间线
+- 时间刻度与游标
+- 时期事件与子事件
+- 标签系统与筛选器
+- 可视化事件编辑器
+- 图片导出
+
+---
+
+## 📄 许可
+
+MIT License
+
+---
+
+## 🙏 致谢
+
+灵感来源于剧本创作和世界观设定的实际需求。感谢 Obsidian 社区提供的开发文档与示例。
