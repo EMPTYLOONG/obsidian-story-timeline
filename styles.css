@@ -1,8 +1,676 @@
-/*
+/* ============ 主容器 ============ */
+.story-timeline-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: 8px;
+	box-sizing: border-box;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.timeline-toolbar {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
 
-If your plugin does not need CSS, delete this file.
+	.timeline-toolbar button {
+		padding: 4px 10px;
+		border-radius: 4px;
+		cursor: pointer;
+		background: var(--interactive-normal);
+		color: var(--text-normal);
+		border: 1px solid var(--background-modifier-border);
+		font-family: inherit;
+	}
 
-*/
+		.timeline-toolbar button:hover {
+			background: var(--interactive-hover);
+		}
+
+.toolbar-spacer {
+	flex: 1;
+}
+
+.toolbar-slider {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.toolbar-slider-label {
+	white-space: nowrap;
+}
+
+.toolbar-slider input[type="range"] {
+	width: 100px;
+	cursor: pointer;
+}
+
+.toolbar-slider-value {
+	min-width: 28px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	font-size: 11px;
+}
+
+/* ============ 视口 ============ */
+.timeline-viewport {
+	flex: 1;
+	overflow: auto;
+	position: relative;
+	margin-top: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.timeline-track {
+	position: relative;
+	box-sizing: border-box;
+}
+
+/* ============ 时间刻度 ============ */
+.timeline-scale {
+	position: sticky;
+	top: 0;
+	height: 26px;
+	background: var(--background-primary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	z-index: 20;
+}
+
+.timeline-tick {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 0;
+}
+
+	.timeline-tick.is-clickable {
+		cursor: pointer;
+	}
+
+		.timeline-tick.is-clickable:hover .tick-label {
+			color: var(--text-accent);
+			font-weight: 600;
+		}
+
+	.timeline-tick .tick-line {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		background: var(--background-modifier-border);
+	}
+
+	.timeline-tick .tick-label {
+		position: absolute;
+		top: 6px;
+		left: 4px;
+		font-size: 11px;
+		color: var(--text-muted);
+		white-space: nowrap;
+		user-select: none;
+	}
+
+/* ============ 游标线 ============ */
+.timeline-cursor {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: var(--text-accent);
+	z-index: 18;
+	pointer-events: none;
+	box-shadow: 0 0 6px rgba(var(--interactive-accent-rgb, 100, 100, 255), 0.4);
+}
+
+.cursor-label {
+	position: absolute;
+	top: 30px;
+	left: 4px;
+	padding: 1px 6px;
+	background: var(--text-accent);
+	color: var(--text-on-accent);
+	border-radius: 3px;
+	font-size: 10px;
+	white-space: nowrap;
+	font-weight: 600;
+}
+
+/* ============ 时长徽章 ============ */
+.duration-badge-layer {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	pointer-events: none;
+	z-index: 22;
+}
+
+.duration-badge {
+	position: absolute;
+	transform: translateY(-50%);
+	padding: 3px 10px;
+	background: var(--text-accent);
+	color: var(--text-on-accent);
+	border-radius: 12px;
+	font-size: 11px;
+	font-weight: 600;
+	white-space: nowrap;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+	pointer-events: none;
+	letter-spacing: 0.2px;
+}
+
+	.duration-badge.is-hidden {
+		display: none;
+	}
+
+/* ============ 轨道 ============ */
+.timeline-lane {
+	position: relative;
+	border-bottom: 1px dashed var(--background-modifier-border);
+	box-sizing: border-box;
+	min-height: 150px;
+}
+
+	.timeline-lane:last-child {
+		border-bottom: none;
+	}
+
+.timeline-lane-label {
+	position: sticky;
+	left: 8px;
+	top: 6px;
+	display: inline-block;
+	padding: 2px 10px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	font-size: 12px;
+	font-weight: 600;
+	z-index: 15;
+	pointer-events: none;
+	opacity: 0.92;
+}
+
+/* ============ 卡片 ============ */
+.timeline-card {
+	position: absolute;
+	top: var(--card-top, 0);
+	height: var(--card-height, auto);
+	border-radius: 8px;
+	background: var(--background-primary);
+	border: 2px solid var(--text-muted);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+	cursor: pointer;
+	transition: box-shadow 0.15s;
+	z-index: 1;
+	box-sizing: border-box;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+	.timeline-card.is-measuring {
+		visibility: hidden;
+	}
+
+	.timeline-card:hover {
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+		z-index: 10;
+	}
+
+	.timeline-card.timeline-period {
+		border-radius: 6px;
+		border-style: solid;
+	}
+
+	.timeline-card.is-layered {
+		border-left-width: 4px;
+	}
+
+	.timeline-card.is-cursor-hit {
+		box-shadow: 0 0 0 2px var(--text-accent), 0 4px 14px rgba(0, 0, 0, 0.3);
+		z-index: 5;
+	}
+
+.card-sticky {
+	position: relative;
+	padding: 6px 10px;
+	box-sizing: border-box;
+	will-change: transform;
+	flex-shrink: 0;
+}
+
+.card-date {
+	font-size: 11px;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.card-date-range {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	letter-spacing: -0.2px;
+}
+
+.card-date-fuzzy {
+	font-style: italic;
+	opacity: 0.85;
+}
+
+.card-title {
+	font-size: 13px;
+	font-weight: 600;
+	margin: 3px 0;
+	color: var(--text-normal);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	line-clamp: 2;
+}
+
+.card-desc {
+	font-size: 11px;
+	color: var(--text-secondary);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ============ 标签 ============ */
+.card-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px;
+	margin-top: 4px;
+	overflow: hidden;
+	flex-shrink: 0;
+}
+
+.card-tag {
+	display: inline-block;
+	padding: 1px 6px;
+	font-size: 10px;
+	line-height: 1.5;
+	border-radius: 8px;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	white-space: nowrap;
+}
+
+.timeline-card:hover .card-tag {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+/* ============ 子事件 ============ */
+.sub-events {
+	position: relative;
+	flex: 1;
+	margin: 0;
+	border-top: 1px dashed var(--background-modifier-border);
+	min-height: 26px;
+	overflow: hidden;
+}
+
+.sub-event-block {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: var(--sub-left, 0%);
+	width: var(--sub-width, 0%);
+	padding: 3px 6px;
+	border-right: 1px solid var(--background-modifier-border);
+	box-sizing: border-box;
+	font-size: 10px;
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	user-select: none;
+}
+
+	.sub-event-block:last-child {
+		border-right: none;
+	}
+
+	.sub-event-block.has-link {
+		color: var(--text-accent);
+		cursor: pointer;
+	}
+
+		.sub-event-block.has-link:hover {
+			background: var(--background-modifier-hover);
+			text-decoration: underline;
+		}
+
+/* ============ 筛选栏 ============ */
+.timeline-filter-bar {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+	.timeline-filter-bar:empty {
+		display: none;
+	}
+
+.filter-group {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 5px;
+}
+
+.filter-group-label {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-right: 4px;
+	font-weight: 500;
+	flex-shrink: 0;
+}
+
+.filter-chip {
+	padding: 2px 9px;
+	font-size: 11px;
+	line-height: 1.6;
+	border-radius: 10px;
+	border: 1px solid var(--background-modifier-border);
+	background: transparent;
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: opacity 0.15s, background 0.15s, transform 0.1s;
+	font-family: inherit;
+}
+
+	.filter-chip:hover {
+		transform: translateY(-1px);
+	}
+
+	.filter-chip.is-hidden {
+		opacity: 0.35;
+		text-decoration: line-through;
+		background: transparent !important;
+	}
+
+.filter-chip-tag {
+	border-color: var(--background-modifier-border);
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+	.filter-chip-tag.is-hidden {
+		background: transparent !important;
+	}
+
+.filter-reset {
+	margin-left: auto;
+	padding: 2px 12px;
+	font-size: 11px;
+	border-radius: 10px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--interactive-normal);
+	color: var(--text-normal);
+	cursor: pointer;
+	font-family: inherit;
+}
+
+	.filter-reset:hover {
+		background: var(--interactive-hover);
+	}
+
+/* ============ 设置面板分类 UI ============ */
+.timeline-category-list {
+	margin-top: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.timeline-category-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+	.timeline-category-row:last-child {
+		border-bottom: none;
+	}
+
+	.timeline-category-row.is-duplicate {
+		background: rgba(231, 76, 60, 0.08);
+		border-left: 3px solid #e74c3c;
+	}
+
+.category-color-input {
+	width: 32px;
+	height: 24px;
+	border: none;
+	background: none;
+	cursor: pointer;
+	padding: 0;
+	flex-shrink: 0;
+}
+
+.category-id {
+	min-width: 90px;
+	padding: 2px 6px;
+	background: var(--background-secondary);
+	border-radius: 4px;
+	font-size: 12px;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+	flex-shrink: 0;
+}
+
+.category-label-input {
+	flex: 1;
+	padding: 4px 8px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+}
+
+.category-delete-btn {
+	padding: 4px 10px;
+	font-size: 12px;
+	flex-shrink: 0;
+}
+
+.category-default-tag {
+	font-size: 11px;
+	color: var(--text-muted);
+	padding: 2px 8px;
+	background: var(--background-secondary);
+	border-radius: 4px;
+	flex-shrink: 0;
+}
+
+.category-duplicate-tag {
+	font-size: 11px;
+	color: #e74c3c;
+	padding: 2px 8px;
+	background: rgba(231, 76, 60, 0.15);
+	border-radius: 4px;
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+}
+/* ============ 阻止轨道与视口空白区域的文本选择 ============ */
+.timeline-track,
+.timeline-lane,
+.timeline-lane-axis {
+	user-select: none;
+}
+
+.timeline-card {
+	user-select: text;
+}
+/* ============ 时间线工具栏 · 新建事件按钮 ============ */
+.timeline-toolbar-new-btn {
+	background: var(--interactive-accent) !important;
+	color: var(--text-on-accent) !important;
+	border-color: var(--interactive-accent) !important;
+	font-weight: 600;
+}
+
+	.timeline-toolbar-new-btn:hover {
+		background: var(--interactive-accent-hover) !important;
+	}
+
+/* ============ 事件编辑器模态框 ============ */
+.timeline-event-editor {
+	min-width: 520px;
+	max-width: 90vw;
+}
+
+	.timeline-event-editor h2 {
+		margin-top: 0;
+	}
+
+	.timeline-event-editor .timeline-event-h3 {
+		margin-top: 20px;
+		margin-bottom: 4px;
+		font-size: 15px;
+	}
+
+	.timeline-event-editor .timeline-event-hint {
+		font-size: 12px;
+		color: var(--text-muted);
+		margin: 0 0 10px 0;
+	}
+
+/* 描述 textarea */
+.timeline-event-textarea {
+	width: 100%;
+	min-height: 70px;
+	resize: vertical;
+	padding: 6px 8px;
+	font-family: inherit;
+	font-size: 13px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	box-sizing: border-box;
+}
+
+	.timeline-event-textarea:focus {
+		outline: none;
+		border-color: var(--interactive-accent);
+	}
+
+/* 子事件列表 */
+.timeline-subevents-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.timeline-subevent-empty {
+	font-size: 12px;
+	color: var(--text-faint);
+	padding: 6px 0;
+	margin: 0;
+}
+
+.timeline-subevent-row {
+	display: grid;
+	grid-template-columns: 1.5fr 1fr 1fr 1.5fr auto;
+	gap: 6px;
+	align-items: center;
+	padding: 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 5px;
+	background: var(--background-secondary);
+}
+
+	.timeline-subevent-row input {
+		padding: 4px 6px;
+		font-size: 12px;
+		font-family: inherit;
+		background: var(--background-primary);
+		color: var(--text-normal);
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 3px;
+		min-width: 0;
+	}
+
+		.timeline-subevent-row input:focus {
+			outline: none;
+			border-color: var(--interactive-accent);
+		}
+
+	.timeline-subevent-row .sub-del {
+		padding: 2px 8px;
+		font-size: 14px;
+		line-height: 1;
+		color: var(--text-muted);
+		background: transparent;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 3px;
+		cursor: pointer;
+	}
+
+		.timeline-subevent-row .sub-del:hover {
+			color: #e74c3c;
+			border-color: #e74c3c;
+		}
+
+.timeline-subevent-add {
+	padding: 4px 12px;
+	font-size: 12px;
+	background: var(--interactive-normal);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+	font-family: inherit;
+}
+
+	.timeline-subevent-add:hover {
+		background: var(--interactive-hover);
+	}
+
+/* 底部按钮 */
+.timeline-event-editor-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 20px;
+	padding-top: 12px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+	.timeline-event-editor-footer button {
+		padding: 5px 16px;
+		font-size: 13px;
+		border-radius: 4px;
+		cursor: pointer;
+		font-family: inherit;
+	}

@@ -1,11 +1,9 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
+	"id": "story-timeline",
+	"name": "Story Timeline",
+	"version": "0.1.0",
 	"minAppVersion": "1.0.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "舷窗式可自定义时间线，用于剧本创作中的时间节点管理",
+	"author": "你的名字",
 	"isDesktopOnly": false
 }
