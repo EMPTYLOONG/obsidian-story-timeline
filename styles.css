@@ -318,7 +318,7 @@
 	color: var(--text-normal);
 }
 
-/* ============ 子事件 ============ */
+
 /* ============ 子事件 ============ */
 .sub-events {
 	position: relative;
@@ -452,7 +452,7 @@
 		background: var(--interactive-hover);
 	}
 
-/* ============ 设置面板分类 UI ============ */
+/* ============ 分类管理 UI ============ */
 .timeline-category-list {
 	margin-top: 8px;
 	border: 1px solid var(--background-modifier-border);
@@ -466,6 +466,8 @@
 	gap: 8px;
 	padding: 6px 10px;
 	border-bottom: 1px solid var(--background-modifier-border);
+	/* 关键：允许子元素收缩，防止长 ID 撑破布局 */
+	min-width: 0;
 }
 
 	.timeline-category-row:last-child {
@@ -487,24 +489,33 @@
 	flex-shrink: 0;
 }
 
+/* 分类 ID：可收缩 + 超长省略号 */
 .category-id {
-	min-width: 90px;
+	min-width: 60px;
+	max-width: 140px;
 	padding: 2px 6px;
 	background: var(--background-secondary);
 	border-radius: 4px;
 	font-size: 12px;
 	color: var(--text-muted);
 	font-family: var(--font-monospace);
-	flex-shrink: 0;
+	flex-shrink: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	box-sizing: border-box;
 }
 
+/* 显示名称输入框：可收缩，不会因内容撑开 */
 .category-label-input {
-	flex: 1;
+	flex: 1 1 0;
+	min-width: 0;
 	padding: 4px 8px;
 	background: var(--background-primary);
 	color: var(--text-normal);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 4px;
+	box-sizing: border-box;
 }
 
 .category-delete-btn {
@@ -530,7 +541,6 @@
 	border-radius: 4px;
 	flex-shrink: 0;
 	white-space: nowrap;
-}
 }
 /* ============ 阻止轨道与视口空白区域的文本选择 ============ */
 .timeline-track,
@@ -686,3 +696,18 @@
 		cursor: pointer;
 		font-family: inherit;
 	}
+/* ============ 确认对话框 ============ */
+.modal .timeline-confirm-line {
+	margin: 4px 0;
+	color: var(--text-normal);
+	line-height: 1.6;
+}
+
+.modal .modal-button-container {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 16px;
+	padding-top: 12px;
+	border-top: 1px solid var(--background-modifier-border);
+}
