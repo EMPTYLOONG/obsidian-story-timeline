@@ -1,48 +1,40 @@
 import { ItemView, WorkspaceLeaf, TFile, Notice, Menu } from 'obsidian';
 import type StoryTimelinePlugin from './main';
 import { EventEditorModal, EventEditorData } from './EventEditorModal';
+import { ExportModal, ExportOptions } from './ExportModal';
 
 export const TIMELINE_VIEW_TYPE = 'story-timeline-view';
 
 type DatePrecision = 'day' | 'month' | 'year';
 
-interface ParsedDate {
-	ts: number;
-	precision: DatePrecision;
-	raw: string;
-}
-
+interface ParsedDate { ts: number; precision: DatePrecision; raw: string; }
 interface SubEvent {
-	dateTs: number;
-	dateStr: string;
-	endTs?: number;
-	endStr?: string;
-	title: string;
-	link?: string;
+	dateTs: number; dateStr: string;
+	endTs?: number; endStr?: string;
+	title: string; link?: string;
 }
-
 interface TimelineEvent {
-	dateTs: number;
-	dateStr: string;
-	datePrecision: DatePrecision;
-	endTs?: number;
-	endStr?: string;
-	endPrecision?: DatePrecision;
-	title: string;
-	description: string;
-	category: string;
-	color?: string;     
-	tags: string[];
-	filePath: string;
-	subEvents: SubEvent[];
+	dateTs: number; dateStr: string; datePrecision: DatePrecision;
+	endTs?: number; endStr?: string; endPrecision?: DatePrecision;
+	title: string; description: string; category: string; color?: string;
+	tags: string[]; filePath: string; subEvents: SubEvent[];
 }
+interface LayoutBox { event: TimelineEvent; startX: number; endX: number; layer: number; }
 
-interface LayoutBox {
-	event: TimelineEvent;
-	startX: number;
-	endX: number;
-	layer: number;
-}
+// ============ 刻度规格（无极缩放核心） ============
+type TickKind = 'week1' | 'week2' | 'month1' | 'month3' | 'month6' | 'year1' | 'year5' | 'year10';
+interface TickSpec { kind: TickKind; approxDays: number; }
+
+const TICK_SPECS: TickSpec[] = [
+	{ kind: 'week1', approxDays: 7 },
+	{ kind: 'week2', approxDays: 14 },
+	{ kind: 'month1', approxDays: 30.44 },
+	{ kind: 'month3', approxDays: 91.31 },
+	{ kind: 'month6', approxDays: 182.62 },
+	{ kind: 'year1', approxDays: 365.25 },
+	{ kind: 'year5', approxDays: 1826.25 },
+	{ kind: 'year10', approxDays: 3652.5 },
+];
 
 const AUTO_COLOR_PALETTE = [
 	'#e91e63', '#9c27b0', '#673ab7', '#3f51b5',
@@ -87,36 +79,23 @@ function parseFlexibleDate(input: string): ParsedDate | null {
 	if (typeof input !== 'string') return null;
 	const s = input.trim();
 	if (!s) return null;
-
 	const normalized = s
-		.replace(/年/g, '-')
-		.replace(/月/g, '-')
-		.replace(/日/g, '')
-		.replace(/[/.]/g, '-')
-		.replace(/-+$/, '')
-		.trim();
-
+		.replace(/年/g, '-').replace(/月/g, '-').replace(/日/g, '')
+		.replace(/[/.]/g, '-').replace(/-+$/, '').trim();
 	const m = normalized.match(/^(-?\d{1,6})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
 	if (!m) return null;
-
-	const yearStr = m[1];
-	const monthStr = m[2];
-	const dayStr = m[3];
-
+	const yearStr = m[1]; const monthStr = m[2]; const dayStr = m[3];
 	if (yearStr === undefined) return null;
 	const y = parseInt(yearStr, 10);
 	if (!isFinite(y)) return null;
-
 	if (dayStr !== undefined) {
 		if (monthStr === undefined) return null;
-		const mo = parseInt(monthStr, 10);
-		const d = parseInt(dayStr, 10);
+		const mo = parseInt(monthStr, 10); const d = parseInt(dayStr, 10);
 		if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
 		const dt = makeUTCDate(y, mo - 1, d);
 		if (isNaN(dt.getTime())) return null;
 		return { ts: dt.getTime(), precision: 'day', raw: s };
 	}
-
 	if (monthStr !== undefined) {
 		const mo = parseInt(monthStr, 10);
 		if (mo < 1 || mo > 12) return null;
@@ -124,7 +103,6 @@ function parseFlexibleDate(input: string): ParsedDate | null {
 		if (isNaN(dt.getTime())) return null;
 		return { ts: dt.getTime(), precision: 'month', raw: s };
 	}
-
 	const dt = makeUTCDate(y, 0, 1);
 	if (isNaN(dt.getTime())) return null;
 	return { ts: dt.getTime(), precision: 'year', raw: s };
@@ -142,14 +120,22 @@ function formatDuration(ms: number): string {
 	if (days < 1) return '不到 1 天';
 	if (days < 60) return `已过 ${Math.floor(days)} 天`;
 	if (days < 730) return `已过 ${Math.floor(days / 30.44)} 个月`;
-
 	const years = days / 365.25;
 	const wholeYears = Math.floor(years);
 	const remainingDays = days - wholeYears * 365.25;
 	const months = Math.floor(remainingDays / 30.44);
-
 	if (months === 0) return `已过 ${wholeYears} 年`;
 	return `已过 ${wholeYears} 年 ${months} 个月`;
+}
+
+function isoWeek(date: Date): number {
+	const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+	const dayNum = (d.getUTCDay() + 6) % 7;
+	d.setUTCDate(d.getUTCDate() - dayNum + 3);
+	const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+	const fdNum = (firstThursday.getUTCDay() + 6) % 7;
+	firstThursday.setUTCDate(firstThursday.getUTCDate() - fdNum + 3);
+	return 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 86400000));
 }
 
 export class TimelineView extends ItemView {
@@ -170,6 +156,14 @@ export class TimelineView extends ItemView {
 	private readonly MIN_CARD_HEIGHT = 130;
 	private readonly STICKY_LEFT = 12;
 	private readonly BADGE_OFFSET_X = 8;
+
+	// 无极缩放范围：0.5 ~ 500（每 30 天对应的像素数）
+	private readonly MIN_ZOOM = 0.5;
+	private readonly MAX_ZOOM = 500;
+	// 点 +/- 时每次乘除的系数
+	private readonly ZOOM_STEP_FACTOR = 1.25;
+	// Ctrl+滚轮每格乘除的系数
+	private readonly ZOOM_WHEEL_FACTOR = 1.12;
 
 	private cursorTs: number | null = null;
 	private stickyRafId = 0;
@@ -203,6 +197,14 @@ export class TimelineView extends ItemView {
 			e.preventDefault();
 		});
 
+		// 滚轮：普通滚动 = 横向滚动；Ctrl/⌘ + 滚轮 = 无极缩放
+		this.registerDomEvent(viewport, 'wheel', (e: WheelEvent) => {
+			if (!e.ctrlKey && !e.metaKey) return;
+			e.preventDefault();
+			const factor = e.deltaY < 0 ? this.ZOOM_WHEEL_FACTOR : 1 / this.ZOOM_WHEEL_FACTOR;
+			this.applyZoom(this.zoomLevel * factor);
+		}, { passive: false });
+
 		this.registerDomEvent(viewport, 'scroll', () => {
 			if (this.stickyRafId) return;
 			this.stickyRafId = window.requestAnimationFrame(() => {
@@ -219,22 +221,17 @@ export class TimelineView extends ItemView {
 			});
 		});
 
-		// 监听笔记的 frontmatter 变化 → 自动刷新视图
 		this.registerEvent(
 			this.app.metadataCache.on('changed', (file) => {
 				if (this.autoRefreshPaused) return;
-
 				const cache = this.app.metadataCache.getFileCache(file);
 				if (!cache?.frontmatter) return;
-
 				const dateField = this.plugin.settings.dateField;
 				if (cache.frontmatter[dateField] === undefined) return;
-
 				this.scheduleAutoRefresh();
 			})
 		);
 
-		// 监听文件删除
 		this.registerEvent(
 			this.app.vault.on('delete', () => {
 				if (this.autoRefreshPaused) return;
@@ -258,16 +255,20 @@ export class TimelineView extends ItemView {
 
 		toolbar.createEl('button', { text: '←' }).onclick = () => this.pan(-200);
 		toolbar.createEl('button', { text: '→' }).onclick = () => this.pan(200);
-		toolbar.createEl('button', { text: '＋' }).onclick = () => this.zoom(20);
-		toolbar.createEl('button', { text: '－' }).onclick = () => this.zoom(-20);
+		toolbar.createEl('button', { text: '＋' }).onclick = () => this.zoomIn();
+		toolbar.createEl('button', { text: '－' }).onclick = () => this.zoomOut();
 		toolbar.createEl('button', { text: '刷新' }).onclick = () => void this.refresh();
-		toolbar.createEl('button', { text: '导出图片' }).onclick = () => void this.exportAsImage();
+		toolbar.createEl('button', { text: '导出图片' }).onclick = () => this.openExportModal();
 		toolbar.createEl('button', { text: '清除游标' }).onclick = () => {
 			this.cursorTs = null;
 			this.updateCursorDisplay();
 		};
 
 		toolbar.createDiv('toolbar-spacer');
+
+		// 缩放显示
+		const zoomLabel = toolbar.createDiv('toolbar-zoom-label');
+		zoomLabel.textContent = this.formatZoomLevel();
 
 		const wrap = toolbar.createDiv('toolbar-slider');
 		wrap.createSpan({ cls: 'toolbar-slider-label', text: '宽度' });
@@ -288,6 +289,37 @@ export class TimelineView extends ItemView {
 			void this.plugin.saveSettings();
 			this.rerender();
 		};
+	}
+
+	private formatZoomLevel(): string {
+		// 显示一个友好的缩放级别数字
+		const z = this.zoomLevel;
+		if (z >= 100) return `×${Math.round(z)}`;
+		if (z >= 10) return `×${z.toFixed(1)}`;
+		return `×${z.toFixed(2)}`;
+	}
+
+	private updateZoomLabel(): void {
+		const el = this.containerEl.querySelector<HTMLElement>('.toolbar-zoom-label');
+		if (el) el.textContent = this.formatZoomLevel();
+	}
+
+	// ============ 无极缩放 ============
+
+	private zoomIn(): void {
+		this.applyZoom(this.zoomLevel * this.ZOOM_STEP_FACTOR);
+	}
+
+	private zoomOut(): void {
+		this.applyZoom(this.zoomLevel / this.ZOOM_STEP_FACTOR);
+	}
+
+	private applyZoom(next: number): void {
+		const clamped = Math.max(this.MIN_ZOOM, Math.min(this.MAX_ZOOM, next));
+		if (Math.abs(clamped - this.zoomLevel) < 1e-9) return;
+		this.zoomLevel = clamped;
+		this.updateZoomLabel();
+		void this.refresh();
 	}
 
 	// ============ 事件编辑器入口 ============
@@ -317,9 +349,7 @@ export class TimelineView extends ItemView {
 		const modal = new EventEditorModal(this.app, this.plugin, data, (saved) => {
 			window.setTimeout(() => {
 				this.autoRefreshPaused = false;
-				if (saved) {
-					this.scheduleAutoRefresh();
-				}
+				if (saved) this.scheduleAutoRefresh();
 			}, 100);
 		});
 		modal.open();
@@ -327,35 +357,19 @@ export class TimelineView extends ItemView {
 
 	private showCardContextMenu(ev: MouseEvent, event: TimelineEvent): void {
 		const menu = new Menu();
-
 		menu.addItem((item) =>
-			item
-				.setTitle('编辑事件')
-				.setIcon('pencil')
-				.onClick(() => this.openEventEditor(event))
+			item.setTitle('编辑事件').setIcon('pencil').onClick(() => this.openEventEditor(event))
 		);
-
 		menu.addItem((item) =>
-			item
-				.setTitle('打开笔记')
-				.setIcon('file-text')
-				.onClick(() => {
-					const file = this.app.vault.getAbstractFileByPath(event.filePath);
-					if (file instanceof TFile) {
-						void this.app.workspace.getLeaf(false).openFile(file);
-					}
-				})
+			item.setTitle('打开笔记').setIcon('file-text').onClick(() => {
+				const file = this.app.vault.getAbstractFileByPath(event.filePath);
+				if (file instanceof TFile) void this.app.workspace.getLeaf(false).openFile(file);
+			})
 		);
-
 		menu.addSeparator();
-
 		menu.addItem((item) =>
-			item
-				.setTitle('从时间线移除')
-				.setIcon('trash')
-				.onClick(() => void this.deleteEventFromTimeline(event))
+			item.setTitle('从时间线移除').setIcon('trash').onClick(() => void this.deleteEventFromTimeline(event))
 		);
-
 		menu.showAtMouseEvent(ev);
 	}
 
@@ -372,14 +386,8 @@ export class TimelineView extends ItemView {
 		}
 
 		const managed = new Set([
-			'timelineDate',
-			'timelineEndDate',
-			'timelineTitle',
-			'timelineDescription',
-			'timelineCategory',
-			'timelineColor',
-			'timelineTags',
-			'timelineSubEvents',
+			'timelineDate', 'timelineEndDate', 'timelineTitle', 'timelineDescription',
+			'timelineCategory', 'timelineColor', 'timelineTags', 'timelineSubEvents',
 		]);
 
 		const oldLines = match[1]!.split(/\r?\n/);
@@ -418,11 +426,8 @@ export class TimelineView extends ItemView {
 		this.rerender();
 	}
 
-	/** 延迟自动刷新。400ms 防抖，避免短时间内多次触发。 */
 	private scheduleAutoRefresh(): void {
-		if (this.autoRefreshTimer) {
-			window.clearTimeout(this.autoRefreshTimer);
-		}
+		if (this.autoRefreshTimer) window.clearTimeout(this.autoRefreshTimer);
 		this.autoRefreshTimer = window.setTimeout(() => {
 			this.autoRefreshTimer = 0;
 			void this.refresh();
@@ -449,7 +454,6 @@ export class TimelineView extends ItemView {
 		if (!wasInitialized) return;
 
 		void viewport.scrollWidth;
-
 		viewport.scrollLeft = savedScrollLeft;
 		viewport.scrollTop = savedScrollTop;
 
@@ -466,26 +470,21 @@ export class TimelineView extends ItemView {
 	private updateStickyContent(): void {
 		const viewport = this.containerEl.querySelector<HTMLElement>('.timeline-viewport');
 		if (!viewport) return;
-
 		const scrollLeft = viewport.scrollLeft;
 		const stickyLeft = scrollLeft + this.STICKY_LEFT;
 
 		const sticks = this.containerEl.querySelectorAll<HTMLElement>(
 			'.timeline-card.timeline-period > .card-sticky'
 		);
-
 		sticks.forEach((stick) => {
 			const card = stick.parentElement;
 			if (!card) return;
-
 			const cardLeft = parseFloat(card.dataset.trackLeft ?? '0');
 			const cardWidth = parseFloat(card.dataset.trackWidth ?? '0');
 			const contentWidth = stick.offsetWidth || this.cardWidth;
-
 			const desired = scrollLeft + this.STICKY_LEFT - cardLeft;
 			const maxOffset = Math.max(0, cardWidth - contentWidth);
 			const offset = Math.max(0, Math.min(desired, maxOffset));
-
 			stick.style.transform = `translateX(${offset}px)`;
 		});
 
@@ -493,7 +492,6 @@ export class TimelineView extends ItemView {
 		badges.forEach((badge) => {
 			const cardEndX = parseFloat(badge.dataset.cardEndX ?? '0');
 			const cursorX = parseFloat(badge.dataset.cursorX ?? '0');
-
 			if (cardEndX <= scrollLeft) {
 				badge.addClass('is-hidden');
 			} else {
@@ -524,15 +522,12 @@ export class TimelineView extends ItemView {
 		if (!this.plugin.settings.autoRegisterCategories) return;
 		const used = new Set<string>();
 		for (const e of this.events) used.add(e.category);
-
 		let changed = false;
 		for (const id of used) {
 			if (id === 'default') continue;
 			if (this.isCategoryTaken(id)) continue;
 			this.plugin.settings.categories.push({
-				id,
-				label: id,
-				color: this.pickAutoColor(),
+				id, label: id, color: this.pickAutoColor(),
 			});
 			changed = true;
 		}
@@ -576,8 +571,7 @@ export class TimelineView extends ItemView {
 			for (const tag of tags) {
 				const hidden = this.hiddenTags.has(tag);
 				const btn = group.createEl('button', {
-					cls: 'filter-chip filter-chip-tag',
-					text: tag,
+					cls: 'filter-chip filter-chip-tag', text: tag,
 				});
 				if (hidden) btn.addClass('is-hidden');
 				btn.onclick = () => {
@@ -667,7 +661,6 @@ export class TimelineView extends ItemView {
 			const rawCatStr = typeof rawCat === 'string' ? rawCat : 'default';
 			const normalizedCat = this.normalizeCategory(rawCatStr);
 
-			// 只接受 #rrggbb 或 #rgb 格式
 			const customColor =
 				typeof rawColor === 'string' && /^#[0-9a-fA-F]{3,6}$/.test(rawColor.trim())
 					? rawColor.trim()
@@ -690,7 +683,6 @@ export class TimelineView extends ItemView {
 				event.endStr = parsedEnd.raw;
 				event.endPrecision = parsedEnd.precision;
 			}
-
 			this.events.push(event);
 		}
 
@@ -716,31 +708,24 @@ export class TimelineView extends ItemView {
 		for (const item of raw) {
 			if (!item || typeof item !== 'object') continue;
 			const obj = item as Record<string, unknown>;
-
 			const subDateStr = normalizeDateValue(obj.date);
 			if (subDateStr === null) continue;
 			const ps = parseFlexibleDate(subDateStr);
 			if (!ps) continue;
-
 			const sub: SubEvent = {
-				dateTs: ps.ts,
-				dateStr: ps.raw,
+				dateTs: ps.ts, dateStr: ps.raw,
 				title: typeof obj.title === 'string' ? obj.title : '',
 			};
-
 			const subEndStr = normalizeDateValue(obj.endDate);
 			if (subEndStr !== null) {
 				const pe = parseFlexibleDate(subEndStr);
 				if (pe && pe.ts >= ps.ts) {
-					sub.endTs = pe.ts;
-					sub.endStr = pe.raw;
+					sub.endTs = pe.ts; sub.endStr = pe.raw;
 				}
 			}
-
 			if (typeof obj.link === 'string' && obj.link.trim().length > 0) {
 				sub.link = parseWikiLink(obj.link.trim());
 			}
-
 			result.push(sub);
 		}
 		return result;
@@ -752,13 +737,16 @@ export class TimelineView extends ItemView {
 		return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh'));
 	}
 
-	// ============ 时间刻度 ============
+	// ============ 时间刻度（无极） ============
 
-	private chooseIntervalMonths(): number {
-		if (this.zoomLevel >= 200) return 1;
-		if (this.zoomLevel >= 60) return 3;
-		if (this.zoomLevel >= 25) return 12;
-		return 60;
+	/** 根据当前 zoomLevel 选择最合适的刻度规格 */
+	private chooseTickSpec(): TickSpec {
+		const pxPerDay = this.zoomLevel / 30;
+		const MIN_PX = 70;
+		for (const spec of TICK_SPECS) {
+			if (spec.approxDays * pxPerDay >= MIN_PX) return spec;
+		}
+		return TICK_SPECS[TICK_SPECS.length - 1]!;
 	}
 
 	private getDateRange(): { startTs: number; endTs: number } | null {
@@ -778,21 +766,88 @@ export class TimelineView extends ItemView {
 		return { startTs: startDate.getTime(), endTs: endDate.getTime() };
 	}
 
-	private getFirstTickStart(startDate: Date, intervalMonths: number): Date {
-		const y = startDate.getUTCFullYear();
-		const m = startDate.getUTCMonth();
-		if (intervalMonths >= 60) return makeUTCDate(Math.floor(y / 5) * 5, 0, 1);
-		if (intervalMonths === 12) return makeUTCDate(y, 0, 1);
-		const aligned = Math.floor(m / intervalMonths) * intervalMonths;
-		return makeUTCDate(y, aligned, 1);
+	/** 找到 range 起点之后（或范围内）第一个刻度 */
+	private getFirstTickStart(rangeStart: Date, spec: TickSpec): Date {
+		const y = rangeStart.getUTCFullYear();
+		const m = rangeStart.getUTCMonth();
+		const d = rangeStart.getUTCDate();
+
+		switch (spec.kind) {
+			case 'week1':
+			case 'week2': {
+				const date = makeUTCDate(y, m, d);
+				const dow = date.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+				const delta = dow === 0 ? -6 : 1 - dow;
+				date.setUTCDate(date.getUTCDate() + delta);
+				return date;
+			}
+			case 'month1':
+				return makeUTCDate(y, m, 1);
+			case 'month3': {
+				const qm = Math.floor(m / 3) * 3;
+				return makeUTCDate(y, qm, 1);
+			}
+			case 'month6':
+				return makeUTCDate(y, m < 6 ? 0 : 6, 1);
+			case 'year1':
+				return makeUTCDate(y, 0, 1);
+			case 'year5':
+				return makeUTCDate(Math.floor(y / 5) * 5, 0, 1);
+			case 'year10':
+				return makeUTCDate(Math.floor(y / 10) * 10, 0, 1);
+		}
 	}
 
-	private formatTickLabel(date: Date, intervalMonths: number): string {
+	private nextTick(cur: Date, spec: TickSpec): Date {
+		const y = cur.getUTCFullYear();
+		const m = cur.getUTCMonth();
+
+		switch (spec.kind) {
+			case 'week1': {
+				const d = new Date(cur);
+				d.setUTCDate(d.getUTCDate() + 7);
+				return d;
+			}
+			case 'week2': {
+				const d = new Date(cur);
+				d.setUTCDate(d.getUTCDate() + 14);
+				return d;
+			}
+			case 'month1':
+				return makeUTCDate(y, m + 1, 1);
+			case 'month3':
+				return makeUTCDate(y, m + 3, 1);
+			case 'month6':
+				return makeUTCDate(y, m + 6, 1);
+			case 'year1':
+				return makeUTCDate(y + 1, 0, 1);
+			case 'year5':
+				return makeUTCDate(y + 5, 0, 1);
+			case 'year10':
+				return makeUTCDate(y + 10, 0, 1);
+		}
+	}
+
+	private formatTickLabel(date: Date, spec: TickSpec): string {
 		const y = date.getUTCFullYear();
 		const m = date.getUTCMonth();
-		if (intervalMonths === 1) return `${y}-${String(m + 1).padStart(2, '0')}`;
-		if (intervalMonths === 3) return `${y} Q${Math.floor(m / 3) + 1}`;
-		return `${y}`;
+
+		switch (spec.kind) {
+			case 'week1':
+			case 'week2':
+				return `${y}-W${String(isoWeek(date)).padStart(2, '0')}`;
+			case 'month1':
+				return `${y}-${String(m + 1).padStart(2, '0')}`;
+			case 'month3':
+				return `${y} Q${Math.floor(m / 3) + 1}`;
+			case 'month6':
+				return `${y} H${m < 6 ? 1 : 2}`;
+			case 'year1':
+				return `${y}`;
+			case 'year5':
+			case 'year10':
+				return `${y}`;
+		}
 	}
 
 	private renderScale(track: HTMLElement, trackWidth: number): void {
@@ -802,22 +857,27 @@ export class TimelineView extends ItemView {
 		const range = this.getDateRange();
 		if (!range) return;
 
-		const interval = this.chooseIntervalMonths();
+		const spec = this.chooseTickSpec();
 		const startDate = new Date(range.startTs);
-		let cursor = this.getFirstTickStart(startDate, interval);
+		let cursor = this.getFirstTickStart(startDate, spec);
 
-		let safety = 500;
-		while (cursor.getTime() < range.startTs - 366 * ONE_DAY_MS && safety-- > 0) {
-			cursor = makeUTCDate(cursor.getUTCFullYear(), cursor.getUTCMonth() + interval, 1);
+		let safety = 1000;
+		while (
+			cursor.getTime() < range.startTs - 366 * ONE_DAY_MS &&
+			safety-- > 0
+		) {
+			cursor = this.nextTick(cursor, spec);
 		}
 
-		while (cursor.getTime() <= range.endTs) {
+		safety = 2000;
+		while (cursor.getTime() <= range.endTs && safety-- > 0) {
 			const x = this.tsToPixels(cursor.getTime());
 			const tick = scale.createDiv('timeline-tick');
 			tick.style.left = `${x}px`;
+			tick.dataset.ts = String(cursor.getTime()); // 导出时用
 			tick.createDiv('tick-line');
 			const label = tick.createDiv('tick-label');
-			label.textContent = this.formatTickLabel(cursor, interval);
+			label.textContent = this.formatTickLabel(cursor, spec);
 
 			const tickTs = cursor.getTime();
 			tick.addClass('is-clickable');
@@ -827,7 +887,7 @@ export class TimelineView extends ItemView {
 				this.updateCursorDisplay();
 			};
 
-			cursor = makeUTCDate(cursor.getUTCFullYear(), cursor.getUTCMonth() + interval, 1);
+			cursor = this.nextTick(cursor, spec);
 		}
 	}
 
@@ -844,7 +904,6 @@ export class TimelineView extends ItemView {
 	private updateCursorDisplay(): void {
 		const track = this.containerEl.querySelector<HTMLElement>('.timeline-track');
 		if (!track) return;
-
 		track.querySelector('.timeline-cursor')?.remove();
 		track.querySelector('.duration-badge-layer')?.remove();
 		this.containerEl.querySelectorAll('.timeline-card.is-cursor-hit').forEach((c) => {
@@ -857,7 +916,6 @@ export class TimelineView extends ItemView {
 		}
 
 		const cursorX = this.tsToPixels(this.cursorTs);
-
 		const line = track.createDiv('timeline-cursor');
 		line.style.left = `${cursorX}px`;
 		line.createDiv('cursor-label').textContent = this.formatCursorLabel(this.cursorTs);
@@ -869,7 +927,6 @@ export class TimelineView extends ItemView {
 	private renderCursorBadges(track: HTMLElement, cursorX: number): void {
 		const cursorTs = this.cursorTs;
 		if (cursorTs === null) return;
-
 		const cards = track.querySelectorAll<HTMLElement>('.timeline-card.timeline-period');
 		if (cards.length === 0) return;
 
@@ -906,36 +963,98 @@ export class TimelineView extends ItemView {
 	}
 
 	// ============ 导出图片 ============
-	private async exportAsImage(): Promise<void> {
+
+	private openExportModal(): void {
+		const modal = new ExportModal(this.app, {}, (opts) => {
+			void this.exportAsImage(opts);
+		});
+		modal.open();
+	}
+
+	private async exportAsImage(opts: ExportOptions): Promise<void> {
 		const track = this.containerEl.querySelector<HTMLElement>('.timeline-track');
 		if (!track) {
 			new Notice('找不到时间线');
 			return;
 		}
 
-		const trackRect = track.getBoundingClientRect();
-		const W = Math.max(track.scrollWidth, Math.ceil(trackRect.width));
-		const H = Math.max(track.scrollHeight, Math.ceil(trackRect.height));
-
-		if (W <= 0 || H <= 0) {
+		const range = this.getDateRange();
+		if (!range) {
 			new Notice('时间线为空，无法导出');
 			return;
 		}
 
-		// 浏览器 Canvas 尺寸上限（保守值）
+		// ========== 1. 解析用户区间 ==========
+		const startParsed = opts.startDate ? parseFlexibleDate(opts.startDate) : null;
+		const endParsed = opts.endDate ? parseFlexibleDate(opts.endDate) : null;
+
+		if (opts.startDate && !startParsed) {
+			new Notice(`无法解析开始日期："${opts.startDate}"`);
+			return;
+		}
+		if (opts.endDate && !endParsed) {
+			new Notice(`无法解析结束日期："${opts.endDate}"`);
+			return;
+		}
+
+		// ========== 2. 收集所有卡片的实际像素边界 ==========
+		const allCards = Array.from(track.querySelectorAll<HTMLElement>('.timeline-card'));
+		const cardBounds: Array<{ el: HTMLElement; left: number; right: number }> = [];
+
+		for (const card of allCards) {
+			const tl = parseFloat(card.dataset.trackLeft ?? 'NaN');
+			const tw = parseFloat(card.dataset.trackWidth ?? 'NaN');
+			if (!isFinite(tl) || !isFinite(tw)) continue;
+			cardBounds.push({ el: card, left: tl, right: tl + tw });
+		}
+
+		if (cardBounds.length === 0) {
+			new Notice('没有可导出的卡片');
+			return;
+		}
+
+		// ========== 3. 确定实际导出边界 ==========
+		// 规则：
+		//   - 用户填了某侧日期 → 严格按该时间点截断（允许卡片被切）
+		//   - 用户没填某侧     → 用事件范围 + 扩展到完整卡片避免被切
+		let baseStartX: number;
+		let baseEndX: number;
+
+		if (startParsed) {
+			baseStartX = this.tsToPixels(startParsed.ts);
+		} else {
+			baseStartX = this.tsToPixels(range.startTs);
+			for (const { left, right } of cardBounds) {
+				if (left < baseStartX && right > baseStartX) baseStartX = left;
+			}
+		}
+
+		if (endParsed) {
+			baseEndX = this.tsToPixels(endParsed.ts);
+		} else {
+			baseEndX = this.tsToPixels(range.endTs);
+			for (const { left, right } of cardBounds) {
+				if (left < baseEndX && right > baseEndX) baseEndX = right;
+			}
+		}
+
+		// 用户填了区间时用较小 padding；没填时用较大 padding
+		const PADDING_LEFT = startParsed ? 20 : 40;
+		const PADDING_RIGHT = endParsed ? 20 : 40;
+
+		const startX = Math.max(0, baseStartX - PADDING_LEFT);
+		const endX = baseEndX + PADDING_RIGHT;
+		const W = endX - startX;
+		const H = Math.max(track.scrollHeight, 200);
+
+		// ========== 4. 选择 dpr ==========
 		const MAX_DIM = 16000;
-		// 总像素数上限（Chrome 约 2^28）
 		const MAX_AREA = 268_000_000;
 
-		// 自动选择 dpr：从 2 开始逐级降低，直到尺寸和面积都不超限
 		let dpr = 2;
 		const candidates = [2, 1.5, 1.25, 1, 0.75, 0.5];
 		for (const c of candidates) {
-			if (
-				W * c <= MAX_DIM &&
-				H * c <= MAX_DIM &&
-				W * c * H * c <= MAX_AREA
-			) {
+			if (W * c <= MAX_DIM && H * c <= MAX_DIM && W * c * H * c <= MAX_AREA) {
 				dpr = c;
 				break;
 			}
@@ -944,22 +1063,20 @@ export class TimelineView extends ItemView {
 		const canvasW = Math.ceil(W * dpr);
 		const canvasH = Math.ceil(H * dpr);
 
-		// 连最小 dpr 都超限 → 提示用户
 		if (canvasW > MAX_DIM || canvasH > MAX_DIM) {
-			const maxSpan = Math.max(W, H);
 			new Notice(
 				`时间线太长（${W}×${H}px），超出浏览器 Canvas 尺寸上限（${MAX_DIM}px）。\n` +
-				`建议：点击工具栏「－」缩小时间轴，或隐藏部分分类后再导出。\n` +
-				`当前跨度：${maxSpan}px`,
+				`建议：缩小时间轴，或缩短导出区间后再试。`,
 				10000
 			);
 			return;
 		}
 
 		console.debug(
-			`[Story Timeline] 导出尺寸: ${W}×${H} (dpr=${dpr}, canvas=${canvasW}×${canvasH})`
+			`[Story Timeline] 导出: ${Math.round(W)}×${Math.round(H)}px, dpr=${dpr}, canvas=${canvasW}×${canvasH}`
 		);
 
+		// ========== 5. 初始化画布 ==========
 		const canvas = document.createElement('canvas');
 		canvas.width = canvasW;
 		canvas.height = canvasH;
@@ -974,106 +1091,49 @@ export class TimelineView extends ItemView {
 		const bgColor = cs.getPropertyValue('--background-primary').trim() || '#ffffff';
 		const subColor = cs.getPropertyValue('--background-secondary').trim() || '#f5f5f5';
 		const textColor = cs.getPropertyValue('--text-normal').trim() || '#222222';
+		const textSecondary = cs.getPropertyValue('--text-secondary').trim() || '#666666';
 		const mutedColor = cs.getPropertyValue('--text-muted').trim() || '#888888';
 		const borderColor = cs.getPropertyValue('--background-modifier-border').trim() || '#dddddd';
 
 		ctx.fillStyle = bgColor;
 		ctx.fillRect(0, 0, W, H);
 
-		const relRect = (el: HTMLElement) => {
-			const r = el.getBoundingClientRect();
-			return {
-				x: r.left - trackRect.left,
-				y: r.top - trackRect.top,
-				w: r.width,
-				h: r.height,
-			};
+		// 文本截断工具
+		const fitText = (text: string, maxW: number, font: string): string => {
+			ctx.font = font;
+			if (ctx.measureText(text).width <= maxW) return text;
+			let s = text;
+			while (s.length > 1 && ctx.measureText(s + '…').width > maxW) {
+				s = s.slice(0, -1);
+			}
+			return s + '…';
 		};
 
-		// 轨道背景
-		const lanes = track.querySelectorAll<HTMLElement>('.timeline-lane');
-		lanes.forEach((lane) => {
-			const r = relRect(lane);
-			ctx.fillStyle = subColor;
-			ctx.fillRect(r.x, r.y, r.w, r.h);
+		// ========== 6. 绘制刻度条 ==========
+		const scaleEl = track.querySelector<HTMLElement>('.timeline-scale');
+		const scaleH = scaleEl?.offsetHeight ?? 26;
 
-			ctx.strokeStyle = borderColor;
-			ctx.setLineDash([4, 4]);
-			ctx.beginPath();
-			ctx.moveTo(r.x, r.y + r.h);
-			ctx.lineTo(r.x + r.w, r.y + r.h);
-			ctx.stroke();
-			ctx.setLineDash([]);
-		});
+		ctx.fillStyle = bgColor;
+		ctx.fillRect(0, 0, W, scaleH);
+		ctx.strokeStyle = borderColor;
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		ctx.moveTo(0, scaleH);
+		ctx.lineTo(W, scaleH);
+		ctx.stroke();
 
-		// 卡片
-		const cards = track.querySelectorAll<HTMLElement>('.timeline-card');
-		cards.forEach((card) => {
-			const r = relRect(card);
-			const cardBg = getComputedStyle(card).backgroundColor;
-			const borderCol = card.style.borderColor || mutedColor;
-
-			ctx.fillStyle = cardBg;
-			ctx.fillRect(r.x, r.y, r.w, r.h);
-
-			ctx.strokeStyle = borderCol;
-			ctx.lineWidth = 2;
-			ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
-
-			ctx.save();
-			ctx.beginPath();
-			ctx.rect(r.x, r.y, r.w, r.h);
-			ctx.clip();
-
-			const sticky = card.querySelector<HTMLElement>('.card-sticky');
-			if (sticky) {
-				const sr = relRect(sticky);
-
-				const dateEl = sticky.querySelector<HTMLElement>('.card-date');
-				if (dateEl) {
-					ctx.fillStyle = mutedColor;
-					ctx.font = '11px sans-serif';
-					ctx.textBaseline = 'top';
-					ctx.fillText(dateEl.textContent ?? '', sr.x + 10, sr.y + 6);
-				}
-
-				const titleEl = sticky.querySelector<HTMLElement>('.card-title');
-				if (titleEl) {
-					ctx.fillStyle = textColor;
-					ctx.font = 'bold 13px sans-serif';
-					const maxW = sr.w - 20;
-					const titleText = titleEl.textContent ?? '';
-					let display = titleText;
-					while (ctx.measureText(display).width > maxW && display.length > 0) {
-						display = display.slice(0, -1);
-					}
-					if (display.length < titleText.length) display = display.slice(0, -1) + '…';
-					ctx.fillText(display, sr.x + 10, sr.y + 24);
-				}
-			}
-			ctx.restore();
-		});
-
-		// 刻度
-		const scale = track.querySelector<HTMLElement>('.timeline-scale');
-		if (scale) {
-			const sr = relRect(scale);
-			ctx.fillStyle = bgColor;
-			ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
-			ctx.strokeStyle = borderColor;
-			ctx.lineWidth = 1;
-			ctx.beginPath();
-			ctx.moveTo(sr.x, sr.y + sr.h);
-			ctx.lineTo(sr.x + sr.w, sr.y + sr.h);
-			ctx.stroke();
-
-			const ticks = scale.querySelectorAll<HTMLElement>('.timeline-tick');
+		if (scaleEl) {
+			const ticks = scaleEl.querySelectorAll<HTMLElement>('.timeline-tick');
 			ticks.forEach((tick) => {
-				const tr = relRect(tick);
+				const ts = parseFloat(tick.dataset.ts ?? 'NaN');
+				if (!isFinite(ts)) return;
+				const x = this.tsToPixels(ts) - startX;
+				if (x < -1 || x > W + 1) return;
+
 				ctx.strokeStyle = borderColor;
 				ctx.beginPath();
-				ctx.moveTo(tr.x, sr.y);
-				ctx.lineTo(tr.x, sr.y + sr.h);
+				ctx.moveTo(x, 0);
+				ctx.lineTo(x, scaleH);
 				ctx.stroke();
 
 				const label = tick.querySelector<HTMLElement>('.tick-label');
@@ -1081,32 +1141,296 @@ export class TimelineView extends ItemView {
 					ctx.fillStyle = mutedColor;
 					ctx.font = '11px sans-serif';
 					ctx.textBaseline = 'top';
-					ctx.fillText(label.textContent ?? '', tr.x + 4, sr.y + 6);
+					ctx.fillText(label.textContent ?? '', x + 4, 6);
 				}
 			});
 		}
 
-		// 轨道标签
-		const labels = track.querySelectorAll<HTMLElement>('.timeline-lane-label');
-		labels.forEach((label) => {
-			const r = relRect(label);
-			ctx.fillStyle = bgColor;
-			ctx.fillRect(r.x, r.y, r.w, r.h);
+		// ========== 7. 绘制每条轨道 ==========
+		const lanes = track.querySelectorAll<HTMLElement>('.timeline-lane');
+
+		lanes.forEach((lane) => {
+			const laneTop = scaleH + lane.offsetTop;
+			const laneH = lane.offsetHeight;
+
+			// lane 背景
+			ctx.fillStyle = subColor;
+			ctx.fillRect(0, laneTop, W, laneH);
+
+			// lane 底边虚线
 			ctx.strokeStyle = borderColor;
-			ctx.lineWidth = 1;
-			ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-			ctx.fillStyle = textColor;
-			ctx.font = 'bold 12px sans-serif';
-			ctx.textBaseline = 'middle';
-			ctx.fillText(label.textContent ?? '', r.x + 8, r.y + r.h / 2);
+			ctx.setLineDash([4, 4]);
+			ctx.beginPath();
+			ctx.moveTo(0, laneTop + laneH);
+			ctx.lineTo(W, laneTop + laneH);
+			ctx.stroke();
+			ctx.setLineDash([]);
+
+			// 该 lane 的卡片
+			const cards = lane.querySelectorAll<HTMLElement>('.timeline-card');
+
+			cards.forEach((card) => {
+				const tl = parseFloat(card.dataset.trackLeft ?? 'NaN');
+				const tw = parseFloat(card.dataset.trackWidth ?? 'NaN');
+				if (!isFinite(tl) || !isFinite(tw)) return;
+
+				const cardX = tl - startX;
+				const cardW = tw;
+
+				// 完全在区间外的卡片直接跳过
+				if (cardX + cardW < 0 || cardX > W) return;
+
+				// ====== 高度自适应：取屏幕测量高度和内容实际高度的较大值 ======
+				const measuredTop = parseFloat(card.dataset.measuredTop ?? '0');
+				const measuredH = parseFloat(card.dataset.measuredHeight ?? '0');
+
+				const stickyEl = card.querySelector<HTMLElement>('.card-sticky');
+				const subEventsEl = card.querySelector<HTMLElement>('.sub-events');
+
+				const stickyContentH = stickyEl ? stickyEl.scrollHeight : 0;
+				const subEventsH = subEventsEl ? subEventsEl.offsetHeight : 0;
+				// 内容总高（padding 大概 6+6=12，加一点余量）
+				const contentNeededH = stickyContentH + subEventsH + 16;
+				const cardH = Math.max(measuredH, contentNeededH, 40);
+				const cardY = laneTop + measuredTop;
+
+				// 卡片背景
+				const cardBg = getComputedStyle(card).backgroundColor;
+				ctx.fillStyle = cardBg;
+				ctx.fillRect(cardX, cardY, cardW, cardH);
+
+				// 卡片边框
+				const borderCol = card.style.borderColor || mutedColor;
+				ctx.strokeStyle = borderCol;
+				ctx.lineWidth = 2;
+				ctx.strokeRect(cardX + 1, cardY + 1, cardW - 2, cardH - 2);
+
+				// ====== 绘制卡片内容（支持左侧截断时的粘性显示） ======
+				const visibleLeft = Math.max(0, cardX);
+				const visibleRight = Math.min(W, cardX + cardW);
+				const visibleWidth = visibleRight - visibleLeft;
+				const isLeftClipped = cardX < 0;
+
+				if (visibleWidth <= 0) {
+					ctx.restore();
+					return;
+				}
+
+				ctx.save();
+				ctx.beginPath();
+				ctx.rect(visibleLeft, cardY, visibleWidth, cardH);
+				ctx.clip();
+
+				const contentLeft = visibleLeft + 10;
+				const contentMaxW = Math.max(20, visibleWidth - 20);
+				let contentY = cardY + 6;
+
+				// 左边界被截断时，计算"已过 X"
+				let elapsedText = '';
+				if (isLeftClipped) {
+					const cardStartTs = parseFloat(card.dataset.startTs ?? '0');
+					const exportLeftTs = this.pixelsToTs(startX);
+					const elapsedMs = exportLeftTs - cardStartTs;
+					if (elapsedMs > 0) {
+						elapsedText = formatDuration(elapsedMs);
+					}
+				}
+
+				if (stickyEl) {
+					// ====== 日期 + 时长徽章 ======
+					const dateEl = stickyEl.querySelector<HTMLElement>('.card-date');
+					const dateStr = dateEl?.textContent ?? '';
+
+					if (dateStr || elapsedText) {
+						ctx.textBaseline = 'top';
+						let cursorX = contentLeft;
+
+						if (dateStr) {
+							const dateDisplay = fitText(dateStr, contentMaxW, '11px sans-serif');
+							ctx.fillStyle = mutedColor;
+							ctx.font = '11px sans-serif';
+							ctx.fillText(dateDisplay, cursorX, contentY);
+							cursorX += ctx.measureText(dateDisplay).width + 8;
+						}
+
+						// "已过 X" 胶囊徽章
+						if (elapsedText) {
+							ctx.font = 'bold 10px sans-serif';
+							const textW = ctx.measureText(elapsedText).width;
+							const badgeW = textW + 12;
+							const badgeH = 14;
+
+							if (cursorX + badgeW <= visibleRight - 8) {
+								const accentColor =
+									cs.getPropertyValue('--interactive-accent').trim() || '#4a9eff';
+								const onAccent =
+									cs.getPropertyValue('--text-on-accent').trim() || '#ffffff';
+
+								// 圆角矩形
+								const bx = cursorX;
+								const by = contentY - 1;
+								const r = badgeH / 2;
+								ctx.fillStyle = accentColor;
+								ctx.beginPath();
+								ctx.moveTo(bx + r, by);
+								ctx.lineTo(bx + badgeW - r, by);
+								ctx.quadraticCurveTo(bx + badgeW, by, bx + badgeW, by + r);
+								ctx.lineTo(bx + badgeW, by + badgeH - r);
+								ctx.quadraticCurveTo(bx + badgeW, by + badgeH, bx + badgeW - r, by + badgeH);
+								ctx.lineTo(bx + r, by + badgeH);
+								ctx.quadraticCurveTo(bx, by + badgeH, bx, by + badgeH - r);
+								ctx.lineTo(bx, by + r);
+								ctx.quadraticCurveTo(bx, by, bx + r, by);
+								ctx.closePath();
+								ctx.fill();
+
+								ctx.fillStyle = onAccent;
+								ctx.textBaseline = 'middle';
+								ctx.fillText(elapsedText, bx + 6, by + badgeH / 2);
+							}
+						}
+
+						contentY += 16;
+					}
+
+					// ====== 标题 ======
+					const titleEl = stickyEl.querySelector<HTMLElement>('.card-title');
+					if (titleEl) {
+						const t = titleEl.textContent ?? '';
+						const display = fitText(t, contentMaxW, 'bold 13px sans-serif');
+						ctx.fillStyle = textColor;
+						ctx.font = 'bold 13px sans-serif';
+						ctx.textBaseline = 'top';
+						ctx.fillText(display, contentLeft, contentY);
+						contentY += 20;
+					}
+
+					// ====== 描述 ======
+					if (opts.includeDescription) {
+						const descEl = stickyEl.querySelector<HTMLElement>('.card-desc');
+						if (descEl) {
+							const t = descEl.textContent ?? '';
+							const display = fitText(t, contentMaxW, '11px sans-serif');
+							ctx.fillStyle = textSecondary;
+							ctx.font = '11px sans-serif';
+							ctx.textBaseline = 'top';
+							ctx.fillText(display, contentLeft, contentY);
+							contentY += 16;
+						}
+					}
+
+					// ====== 标签 ======
+					if (opts.includeTags) {
+						const tagRow = stickyEl.querySelector<HTMLElement>('.card-tags');
+						if (tagRow) {
+							let tagX = contentLeft;
+							const tagY = contentY;
+							const tagEls = tagRow.querySelectorAll<HTMLElement>('.card-tag');
+							tagEls.forEach((tagEl) => {
+								const tagText = tagEl.textContent ?? '';
+								ctx.font = '10px sans-serif';
+								const tagW = ctx.measureText(tagText).width + 12;
+								if (tagX + tagW > visibleRight - 8) return;
+
+								ctx.fillStyle = subColor;
+								ctx.fillRect(tagX, tagY, tagW, 15);
+								ctx.strokeStyle = borderColor;
+								ctx.lineWidth = 1;
+								ctx.strokeRect(tagX + 0.5, tagY + 0.5, tagW - 1, 14);
+
+								ctx.fillStyle = mutedColor;
+								ctx.textBaseline = 'middle';
+								ctx.fillText(tagText, tagX + 6, tagY + 7.5);
+
+								tagX += tagW + 3;
+							});
+						}
+					}
+				}
+
+				// ====== 绘制子事件 ======
+				if (opts.includeSubEvents && subEventsEl) {
+					const subRowTop = cardY + subEventsEl.offsetTop;
+
+					// 子事件区分隔线
+					ctx.strokeStyle = borderColor;
+					ctx.setLineDash([3, 3]);
+					ctx.beginPath();
+					ctx.moveTo(Math.max(cardX + 4, visibleLeft + 4), subRowTop);
+					ctx.lineTo(Math.min(cardX + cardW - 4, visibleRight - 4), subRowTop);
+					ctx.stroke();
+					ctx.setLineDash([]);
+
+					const blocks = subEventsEl.querySelectorAll<HTMLElement>('.sub-event-block');
+					blocks.forEach((block) => {
+						const bx = cardX + block.offsetLeft;
+						const by = subRowTop + block.offsetTop;
+						const bw = block.offsetWidth;
+						const bh = block.offsetHeight;
+
+						// 完全在可见区域外则跳过
+						if (bx + bw < visibleLeft || bx > visibleRight) return;
+
+						const blockCs = getComputedStyle(block);
+						const blockBg = blockCs.backgroundColor;
+						if (blockBg && blockBg !== 'transparent' && blockBg !== 'rgba(0, 0, 0, 0)') {
+							ctx.fillStyle = blockBg;
+							ctx.fillRect(bx, by, bw, bh);
+						}
+
+						const blockText = block.textContent ?? '';
+						if (blockText && bw > 20) {
+							ctx.save();
+							ctx.beginPath();
+							ctx.rect(bx, by, bw, bh);
+							ctx.clip();
+
+							const display = fitText(blockText, bw - 8, '10px sans-serif');
+							ctx.fillStyle = blockCs.color || mutedColor;
+							ctx.font = '10px sans-serif';
+							ctx.textBaseline = 'middle';
+							ctx.textAlign = 'center';
+							ctx.fillText(display, bx + bw / 2, by + bh / 2);
+
+							ctx.textAlign = 'start';
+							ctx.restore();
+						}
+					});
+				}
+
+				ctx.restore();
+			});
+
+			// ====== 轨道标签（固定在 lane 左上角，不随滚动） ======
+			const labelEl = lane.querySelector<HTMLElement>('.timeline-lane-label');
+			if (labelEl) {
+				const labelText = labelEl.textContent ?? '';
+				ctx.font = 'bold 12px sans-serif';
+				const textW = ctx.measureText(labelText).width;
+				const labelW = textW + 20;
+				const labelH = 22;
+				const labelX = 8;
+				const labelY = laneTop + 6;
+
+				ctx.fillStyle = bgColor;
+				ctx.fillRect(labelX, labelY, labelW, labelH);
+				ctx.strokeStyle = borderColor;
+				ctx.lineWidth = 1;
+				ctx.strokeRect(labelX + 0.5, labelY + 0.5, labelW - 1, labelH - 1);
+
+				ctx.fillStyle = textColor;
+				ctx.font = 'bold 12px sans-serif';
+				ctx.textBaseline = 'middle';
+				ctx.fillText(labelText, labelX + 10, labelY + labelH / 2);
+			}
 		});
 
+		// ========== 8. 下载 ==========
 		canvas.toBlob((blob) => {
 			if (!blob) {
 				console.debug('[Story Timeline] toBlob 返回 null，尺寸:', canvasW, '×', canvasH);
 				new Notice(
-					`导出失败：画布过大（${canvasW}×${canvasH}）。\n` +
-					`请缩小时间轴或减少事件后重试。`,
+					`导出失败：画布过大（${canvasW}×${canvasH}）。\n请缩小时间轴或缩短区间后重试。`,
 					8000
 				);
 				return;
@@ -1183,7 +1507,6 @@ export class TimelineView extends ItemView {
 		this.renderScale(track, trackWidth);
 
 		const visibleEvents = this.events.filter((e) => this.isEventVisible(e));
-
 		const grouped = new Map<string, TimelineEvent[]>();
 		for (const event of visibleEvents) {
 			const known = this.plugin.settings.categories.some((c) => c.id === event.category);
@@ -1337,7 +1660,6 @@ export class TimelineView extends ItemView {
 		card.dataset.startTs = String(event.dateTs);
 		card.dataset.endTs = String(event.endTs ?? event.dateTs);
 
-		// 事件自定义颜色优先于分类颜色
 		const color = event.color ?? this.getCategoryColor(event.category);
 		card.style.left = `${box.startX}px`;
 		card.style.width = `${cardWidthPx}px`;
@@ -1346,6 +1668,7 @@ export class TimelineView extends ItemView {
 		if (hasPeriod) {
 			card.style.background = this.hexToRgba(color, 0.08);
 		}
+
 		const sticky = card.createDiv('card-sticky');
 		sticky.style.width = `${Math.min(this.cardWidth, cardWidthPx)}px`;
 
@@ -1383,14 +1706,11 @@ export class TimelineView extends ItemView {
 				const block = subRow.createDiv('sub-event-block');
 				block.style.setProperty('--sub-left', `${leftPct}%`);
 				block.style.setProperty('--sub-width', `${widthPct}%`);
-				// 子事件块用更深的分类色作背景，与父卡片形成对比
 				block.style.setProperty('--sub-bg', this.hexToRgba(color, 0.32));
 				block.style.setProperty('--sub-bg-hover', this.hexToRgba(color, 0.5));
 				block.style.setProperty('--sub-border', this.hexToRgba(color, 0.55));
 				block.textContent = sub.title;
-				block.title = sub.endStr
-					? `${sub.dateStr} → ${sub.endStr}`
-					: sub.dateStr;
+				block.title = sub.endStr ? `${sub.dateStr} → ${sub.endStr}` : sub.dateStr;
 
 				if (sub.link) {
 					const link = sub.link;
@@ -1438,10 +1758,8 @@ export class TimelineView extends ItemView {
 		if (this.events.length === 0) return;
 		const first = this.events[0];
 		if (!first) return;
-
 		this.initialScrollDone = true;
 		const targetLeft = Math.max(0, this.tsToPixels(first.dateTs) - 100);
-
 		void viewport.scrollWidth;
 		viewport.scrollLeft = targetLeft;
 	}
@@ -1453,7 +1771,11 @@ export class TimelineView extends ItemView {
 		const days = (ts - this.baseTime) / ONE_DAY_MS;
 		return this.LEFT_PADDING + (days * this.zoomLevel) / 30;
 	}
-
+	/** 像素 → 时间戳（tsToPixels 的逆运算） */
+	private pixelsToTs(px: number): number {
+		const days = (px - this.LEFT_PADDING) * 30 / this.zoomLevel;
+		return this.baseTime + days * ONE_DAY_MS;
+	}
 	private hexToRgba(hex: string, alpha: number): string {
 		const m = hex.replace('#', '');
 		if (m.length !== 6) return `rgba(149,165,166,${alpha})`;
@@ -1466,11 +1788,6 @@ export class TimelineView extends ItemView {
 	private pan(offset: number): void {
 		const viewport = this.containerEl.querySelector<HTMLElement>('.timeline-viewport');
 		if (viewport) viewport.scrollLeft += offset;
-	}
-
-	private zoom(delta: number): void {
-		this.zoomLevel = Math.max(10, this.zoomLevel + delta);
-		void this.refresh();
 	}
 
 	async onClose(): Promise<void> {

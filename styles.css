@@ -711,3 +711,107 @@
 	padding-top: 12px;
 	border-top: 1px solid var(--background-modifier-border);
 }
+/* ============ 缩放级别显示 ============ */
+.toolbar-zoom-label {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	padding: 0 6px;
+	white-space: nowrap;
+	min-width: 50px;
+	text-align: right;
+}
+
+/* ============ 导出对话框 ============ */
+.timeline-export-modal {
+	min-width: 480px;
+	max-width: 90vw;
+}
+
+	.timeline-export-modal h2 {
+		margin-top: 0;
+	}
+
+	.timeline-export-modal h3 {
+		margin: 16px 0 6px 0;
+		font-size: 14px;
+		color: var(--text-normal);
+	}
+
+.timeline-export-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin: 0 0 10px 0;
+}
+
+.timeline-export-row {
+	display: flex;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+
+.timeline-export-field {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+	.timeline-export-field label {
+		font-size: 12px;
+		color: var(--text-muted);
+	}
+
+	.timeline-export-field input {
+		padding: 6px 8px;
+		font-family: inherit;
+		font-size: 13px;
+		background: var(--background-primary);
+		color: var(--text-normal);
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 4px;
+	}
+
+		.timeline-export-field input:focus {
+			outline: none;
+			border-color: var(--interactive-accent);
+		}
+
+.timeline-export-options {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.timeline-export-check {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+}
+
+	.timeline-export-check input[type="checkbox"] {
+		cursor: pointer;
+	}
+
+	.timeline-export-check label {
+		cursor: pointer;
+		user-select: none;
+	}
+
+.timeline-export-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 20px;
+	padding-top: 12px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+	.timeline-export-footer button {
+		padding: 6px 16px;
+		font-size: 13px;
+		border-radius: 4px;
+		cursor: pointer;
+		font-family: inherit;
+	}

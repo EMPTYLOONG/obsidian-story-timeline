@@ -46,7 +46,7 @@ export function migrateSettings(raw: unknown): TimelineSettings {
 		dateField:
 			typeof data.dateField === 'string' ? data.dateField : DEFAULT_SETTINGS.dateField,
 		defaultZoom:
-			typeof data.defaultZoom === 'number'
+			typeof data.defaultZoom === 'number' && data.defaultZoom >= 0.5 && data.defaultZoom <= 500
 				? data.defaultZoom
 				: DEFAULT_SETTINGS.defaultZoom,
 		showDescription:
@@ -167,10 +167,10 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('默认缩放级别')
-			.setDesc('数值越大，事件间距越大')
+			.setDesc('0.5 = 10年间隔，500 = 周间隔。可在时间线视图里用 Ctrl+滚轮 调整')
 			.addSlider((slider) =>
 				slider
-					.setLimits(20, 300, 10)
+					.setLimits(1, 500, 1)
 					.setValue(this.plugin.settings.defaultZoom)
 					.setDynamicTooltip()
 					.onChange(async (value) => {
@@ -178,7 +178,6 @@ export class TimelineSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
-
 		new Setting(containerEl)
 			.setName('卡片宽度（像素）')
 			.setDesc('也可在时间线视图工具栏右侧实时调整')
