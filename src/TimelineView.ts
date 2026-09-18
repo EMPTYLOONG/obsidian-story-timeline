@@ -170,7 +170,8 @@ export class TimelineView extends ItemView {
 	private initialScrollDone = false;
 	private autoRefreshTimer = 0;
 	private autoRefreshPaused = false;
-
+	/** 缩放时待应用的 scrollLeft（以鼠标/视口中心为锚点计算） */
+	private pendingScrollLeft: number | null = null;
 	constructor(leaf: WorkspaceLeaf, plugin: StoryTimelinePlugin) {
 		super(leaf);
 		this.plugin = plugin;
@@ -202,9 +203,9 @@ export class TimelineView extends ItemView {
 			if (!e.ctrlKey && !e.metaKey) return;
 			e.preventDefault();
 			const factor = e.deltaY < 0 ? this.ZOOM_WHEEL_FACTOR : 1 / this.ZOOM_WHEEL_FACTOR;
-			this.applyZoom(this.zoomLevel * factor);
+			// 传入鼠标 X 坐标，让缩放以鼠标位置为锚点
+			this.applyZoom(this.zoomLevel * factor, e.clientX);
 		}, { passive: false });
-
 		this.registerDomEvent(viewport, 'scroll', () => {
 			if (this.stickyRafId) return;
 			this.stickyRafId = window.requestAnimationFrame(() => {
@@ -314,12 +315,41 @@ export class TimelineView extends ItemView {
 		this.applyZoom(this.zoomLevel / this.ZOOM_STEP_FACTOR);
 	}
 
-	private applyZoom(next: number): void {
+	private applyZoom(next: number, mouseClientX?: number): void {
 		const clamped = Math.max(this.MIN_ZOOM, Math.min(this.MAX_ZOOM, next));
 		if (Math.abs(clamped - this.zoomLevel) < 1e-9) return;
-		this.zoomLevel = clamped;
-		this.updateZoomLabel();
-		void this.refresh();
+
+		const viewport = this.containerEl.querySelector<HTMLElement>('.timeline-viewport');
+
+		if (viewport) {
+			const rect = viewport.getBoundingClientRect();
+
+			// 锚点：鼠标位置（如果给了）或 视口中心
+			const offsetX =
+				mouseClientX !== undefined
+					? mouseClientX - rect.left
+					: rect.width / 2;
+
+			// 缩放前：鼠标位置对应的 track 坐标 → 时间戳
+			const anchorTs = this.pixelsToTs(viewport.scrollLeft + offsetX);
+
+			// 应用新 zoomLevel
+			this.zoomLevel = clamped;
+			this.updateZoomLabel();
+
+			// 缩放后：该时间戳的新像素位置 → 反推 scrollLeft
+			const newAnchorX = this.tsToPixels(anchorTs);
+			this.pendingScrollLeft = Math.max(0, newAnchorX - offsetX);
+
+			// 强制 rerender 走"恢复滚动位置"路径（即使还没初始化过）
+			this.initialScrollDone = true;
+		} else {
+			this.zoomLevel = clamped;
+			this.updateZoomLabel();
+		}
+
+		// zoom 不需要重新扫描事件，直接 rerender
+		this.rerender();
 	}
 
 	// ============ 事件编辑器入口 ============
@@ -344,7 +374,10 @@ export class TimelineView extends ItemView {
 					link: s.link ?? '',
 				})),
 			}
-			: {};
+			: {
+				// 新建时用设置里的默认文件夹
+				folder: this.plugin.settings.eventFolder,
+			};
 
 		const modal = new EventEditorModal(this.app, this.plugin, data, (saved) => {
 			window.setTimeout(() => {
@@ -444,9 +477,13 @@ export class TimelineView extends ItemView {
 		const viewport = this.containerEl.querySelector<HTMLElement>('.timeline-viewport');
 		if (!viewport) return;
 
-		const savedScrollLeft = viewport.scrollLeft;
+		// 缩放时有 pending 值，优先用它；否则保持当前滚动位置
+		const isZoomPending = this.pendingScrollLeft !== null;
+		const targetScrollLeft = this.pendingScrollLeft ?? viewport.scrollLeft;
 		const savedScrollTop = viewport.scrollTop;
 		const wasInitialized = this.initialScrollDone;
+
+		this.pendingScrollLeft = null;
 
 		viewport.empty();
 		this.renderTimeline(viewport);
@@ -454,12 +491,18 @@ export class TimelineView extends ItemView {
 		if (!wasInitialized) return;
 
 		void viewport.scrollWidth;
-		viewport.scrollLeft = savedScrollLeft;
+
+		viewport.scrollLeft = targetScrollLeft;
 		viewport.scrollTop = savedScrollTop;
 
 		window.requestAnimationFrame(() => {
-			if (savedScrollLeft > 20 && viewport.scrollLeft < 10) {
-				viewport.scrollLeft = savedScrollLeft;
+			if (isZoomPending) {
+				// 缩放后无条件恢复（finalizeLaneLayout 可能改变布局导致偏移）
+				viewport.scrollLeft = targetScrollLeft;
+				viewport.scrollTop = savedScrollTop;
+			} else if (targetScrollLeft > 20 && viewport.scrollLeft < 10) {
+				// 其他情况的兜底
+				viewport.scrollLeft = targetScrollLeft;
 				viewport.scrollTop = savedScrollTop;
 			}
 		});

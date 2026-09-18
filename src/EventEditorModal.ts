@@ -15,6 +15,8 @@ export interface EventEditorData {
 	endDate: string;
 	category: string;
 	color: string;
+	folder: string;
+	saveFolderAsDefault: boolean;
 	tags: string[];
 	description: string;
 	subEvents: SubEventInput[];
@@ -60,6 +62,8 @@ export class EventEditorModal extends Modal {
 			endDate: data.endDate ?? '',
 			category: data.category ?? this.defaultCategoryId(),
 			color: data.color ?? '',
+			folder: data.folder ?? plugin.settings.eventFolder,
+			saveFolderAsDefault: false,
 			tags: data.tags ?? [],
 			description: data.description ?? '',
 			subEvents: data.subEvents ?? [],
@@ -71,12 +75,25 @@ export class EventEditorModal extends Modal {
 		return first?.id ?? 'default';
 	}
 
-	/** 取分类的默认颜色 */
 	private getCategoryColor(catId: string): string {
 		const cat = this.plugin.settings.categories.find((c) => c.id === catId);
 		if (cat) return cat.color;
 		const def = this.plugin.settings.categories.find((c) => c.id === 'default');
 		return def?.color ?? '#95a5a6';
+	}
+
+	/** 收集库中所有文件夹路径（用于 datalist 下拉提示） */
+	private collectFolders(): string[] {
+		const folders = new Set<string>();
+		const files = this.app.vault.getMarkdownFiles();
+		for (const f of files) {
+			const parts = f.path.split('/');
+			// 排除文件名，只保留文件夹路径
+			for (let i = 1; i < parts.length; i++) {
+				folders.add(parts.slice(0, i).join('/'));
+			}
+		}
+		return Array.from(folders).sort();
 	}
 
 	onOpen(): void {
@@ -88,6 +105,7 @@ export class EventEditorModal extends Modal {
 			text: this.isEdit ? '编辑时间线事件' : '新建时间线事件',
 		});
 
+		// ============ 标题 ============
 		new Setting(contentEl)
 			.setName('标题')
 			.setDesc('事件的名称')
@@ -100,6 +118,45 @@ export class EventEditorModal extends Modal {
 					})
 			);
 
+		// ============ 保存文件夹（仅新建模式） ============
+		if (!this.isEdit) {
+			// 创建 datalist（提前，供 input 引用）
+			const datalistId = 'timeline-folder-datalist';
+			const existingList = contentEl.querySelector(`#${datalistId}`);
+			if (!existingList) {
+				const datalist = contentEl.createEl('datalist');
+				datalist.id = datalistId;
+				for (const f of this.collectFolders()) {
+					datalist.createEl('option', { value: f });
+				}
+			}
+
+			new Setting(contentEl)
+				.setName('保存文件夹')
+				.setDesc('留空 = 库根目录。仅影响本次新建')
+				.addText((text) => {
+					text
+						.setPlaceholder('例如 时间线/事件')
+						.setValue(this.data.folder)
+						.onChange((v) => {
+							this.data.folder = v.trim();
+						});
+					// 关联 datalist 提供下拉提示
+					text.inputEl.setAttribute('list', datalistId);
+					text.inputEl.addClass('timeline-folder-input');
+				});
+
+			new Setting(contentEl)
+				.setName('设为此后默认')
+				.setDesc('勾选后，下次新建事件时自动使用此文件夹')
+				.addToggle((toggle) =>
+					toggle.setValue(false).onChange((v) => {
+						this.data.saveFolderAsDefault = v;
+					})
+				);
+		}
+
+		// ============ 开始日期 ============
 		new Setting(contentEl)
 			.setName('开始日期')
 			.setDesc('支持：2024-03-15 / 2024-03 / 2024 / 618 / 2024年3月15日')
@@ -112,6 +169,7 @@ export class EventEditorModal extends Modal {
 					})
 			);
 
+		// ============ 结束日期 ============
 		new Setting(contentEl)
 			.setName('结束日期')
 			.setDesc('留空 = 单点事件；填写后变成时期条带')
@@ -124,6 +182,7 @@ export class EventEditorModal extends Modal {
 					})
 			);
 
+		// ============ 分类 ============
 		new Setting(contentEl)
 			.setName('分类')
 			.setDesc('事件所属的轨道')
@@ -161,6 +220,7 @@ export class EventEditorModal extends Modal {
 					})
 			);
 
+		// ============ 标签 ============
 		new Setting(contentEl)
 			.setName('标签')
 			.setDesc('用逗号分隔多个标签')
@@ -176,7 +236,7 @@ export class EventEditorModal extends Modal {
 					})
 			);
 
-		// 描述
+		// ============ 描述 ============
 		const descItem = contentEl.createDiv('setting-item');
 		const descInfo = descItem.createDiv('setting-item-info');
 		descInfo.createDiv('setting-item-name').textContent = '描述';
@@ -191,7 +251,7 @@ export class EventEditorModal extends Modal {
 			this.data.description = descArea.value;
 		};
 
-		// 子事件
+		// ============ 子事件 ============
 		contentEl.createEl('h3', { cls: 'timeline-event-h3', text: '子事件（可选）' });
 		contentEl.createEl('p', {
 			cls: 'timeline-event-hint',
@@ -210,7 +270,7 @@ export class EventEditorModal extends Modal {
 			this.renderSubEvents();
 		};
 
-		// 底部
+		// ============ 底部按钮 ============
 		const footer = contentEl.createDiv('timeline-event-editor-footer');
 
 		const cancelBtn = footer.createEl('button', { text: '取消' });
@@ -292,6 +352,12 @@ export class EventEditorModal extends Modal {
 				await this.updateExistingFile();
 			} else {
 				await this.createNewFile();
+				// 保存后更新默认文件夹（如果需要）
+				if (this.data.saveFolderAsDefault) {
+					this.plugin.settings.eventFolder = this.data.folder;
+					await this.plugin.saveSettings();
+					new Notice('已将当前文件夹设为默认');
+				}
 			}
 			new Notice(this.isEdit ? '事件已更新' : '事件已创建');
 			this.close();
@@ -305,11 +371,13 @@ export class EventEditorModal extends Modal {
 	}
 
 	private async createNewFile(): Promise<void> {
-		const folder = this.plugin.settings.eventFolder.trim();
+		// 优先用编辑器里指定的文件夹
+		const folder = this.data.folder.trim();
 		const safeTitle = this.data.title.replace(/[\\/:*?"<>|]/g, '_').trim() || '未命名事件';
 
 		let path = folder ? `${folder}/${safeTitle}.md` : `${safeTitle}.md`;
 
+		// 处理重名
 		let counter = 1;
 		while (this.app.vault.getAbstractFileByPath(path)) {
 			path = folder
@@ -318,15 +386,31 @@ export class EventEditorModal extends Modal {
 			counter++;
 		}
 
+		// 确保目录存在（递归创建）
 		if (folder) {
-			const existing = this.app.vault.getAbstractFileByPath(folder);
-			if (!existing) {
-				await this.app.vault.createFolder(folder);
-			}
+			await this.ensureFolder(folder);
 		}
 
 		const content = this.buildNewFileContent();
 		await this.app.vault.create(path, content);
+	}
+
+	/** 递归创建文件夹（若已存在则跳过） */
+	private async ensureFolder(folderPath: string): Promise<void> {
+		const parts = folderPath.split('/').filter((p) => p.length > 0);
+		let current = '';
+		for (const part of parts) {
+			current = current ? `${current}/${part}` : part;
+			const existing = this.app.vault.getAbstractFileByPath(current);
+			if (!existing) {
+				try {
+					await this.app.vault.createFolder(current);
+				} catch (e) {
+					// 并发时可能已被创建，忽略
+					console.debug(`[Story Timeline] createFolder "${current}" skipped:`, e);
+				}
+			}
+		}
 	}
 
 	private async updateExistingFile(): Promise<void> {
@@ -342,7 +426,6 @@ export class EventEditorModal extends Modal {
 		await this.app.vault.modify(file, newContent);
 	}
 
-	/** 收集本次要写入的所有 timeline 相关行（所有值经 yamlString 转义） */
 	private buildTimelineLines(): string[] {
 		const lines: string[] = [];
 
@@ -357,11 +440,10 @@ export class EventEditorModal extends Modal {
 		}
 		lines.push(`timelineCategory: ${yamlString(this.data.category)}`);
 
-		// 自定义代表色（仅当用户设了自定义色才写入）
-		// ⚠️ 必须用 yamlString 加引号，因为 # 在 YAML 里是注释符
 		if (this.data.color.trim()) {
 			lines.push(`timelineColor: ${yamlString(this.data.color.trim())}`);
 		}
+
 		if (this.data.tags.length > 0) {
 			lines.push(
 				`timelineTags: [${this.data.tags.map((t) => yamlString(t)).join(', ')}]`
